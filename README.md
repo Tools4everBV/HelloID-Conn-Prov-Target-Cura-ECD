@@ -26,3 +26,6 @@ Note that this is connector is **'a work in progress'** and therefore not ready 
 ## Prerequisites
 
 ## Getting Started
+
+# HelloID Docs
+The official HelloID documentation can be found at: https://docs.helloid.com/
