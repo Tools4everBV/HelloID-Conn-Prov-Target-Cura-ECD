@@ -2,7 +2,7 @@
 
 | :warning: Warning |
 |:---------------------------|
-| Note that this is connector is **'a work in progress'** and therefore not ready to use in your  production environment.       |
+| Note that this connector is **'a work in progress'** and therefore not ready to use in your  production environment.       |
 
 | :information_source: Information |
 |:---------------------------|
