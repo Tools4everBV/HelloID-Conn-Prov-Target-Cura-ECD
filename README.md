@@ -1,6 +1,13 @@
 # HelloID-Conn-Prov-Target-Cura-ECD
 
-Note that this is connector is **'a work in progress'** and therefore not ready to use in your  production environment. 
+| :warning: WARNING |
+|:---------------------------|
+| Note that this is connector is **'a work in progress'** and therefore not ready to use in your  production environment.       |
+
+| :information_source: Information |
+|:---------------------------|
+| This repository contains the connector and configuration code only. You are responsible to acquire the connection details such as username, password, certificate, etc yourself. You might even need to sign a contract or agreement with the supplier before implementing this connector. Please contact the client's application manager to coordinate the connector requirements.       |
+
 
 [TOC]
 
