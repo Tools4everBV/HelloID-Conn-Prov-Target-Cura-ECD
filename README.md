@@ -1,6 +1,6 @@
 # HelloID-Conn-Prov-Target-Cura-ECD
 
-| :warning: WARNING |
+| :warning: Warning |
 |:---------------------------|
 | Note that this is connector is **'a work in progress'** and therefore not ready to use in your  production environment.       |
 
