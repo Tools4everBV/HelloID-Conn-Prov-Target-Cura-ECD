@@ -1,5 +1,5 @@
 #####################################################
-# HelloID-Conn-Prov-Target-Cura-ECD-Entitlement-Revoke
+# HelloID-Conn-Prov-Target-Fierit-ECD-Entitlement-Revoke
 #
 # Version: 1.0.0
 #####################################################
@@ -121,7 +121,7 @@ try {
             if ($user.Length -eq 0) {
                 $userFound = 'NotFound'
                 if ($dryRun -eq $true) {
-                    Write-Warning "[DryRun] [$($employee.EmployeeId)] Cura-ECD account not found. Possibly already deleted, skipping action."
+                    Write-Warning "[DryRun] [$($employee.EmployeeId)] Fierit-ECD account not found. Possibly already deleted, skipping action."
                 }
             }
             else {
@@ -129,13 +129,13 @@ try {
             }
 
             if ($dryRun -eq $true) {
-                Write-Warning "[DryRun] Revoke Cura-ECD Team entitlement: [$($pRef.name)] from: [$($p.DisplayName)] will be executed during enforcement"
+                Write-Warning "[DryRun] Revoke Fierit-ECD Team entitlement: [$($pRef.name)] from: [$($p.DisplayName)] will be executed during enforcement"
             }
         
             if (-not($dryRun -eq $true)) {
                 switch ($userFound) {
                     'Found' {
-                        Write-Verbose "Revoking Cura-ECD Team entitlement: [$($pRef.name)] for employee: [$($employee.EmployeeId)]"
+                        Write-Verbose "Revoking Fierit-ECD Team entitlement: [$($pRef.name)] for employee: [$($employee.EmployeeId)]"
             
                         $removeTeam = [PSCustomObject]@{
                             id = $pRef.id
@@ -157,21 +157,21 @@ try {
                             $null = Invoke-RestMethod @splatRequestUpdateUser -UseBasicParsing -Verbose:$false
 
                             $auditLogs.Add([PSCustomObject]@{
-                                Message = "Employee: [$($employee.EmployeeId)], Revoke Cura-ECD Team entitlement: [$($pRef.name)] was successful"
+                                Message = "Employee: [$($employee.EmployeeId)], Revoke Fierit-ECD Team entitlement: [$($pRef.name)] was successful"
                                 IsError = $false
                             })
                         }
                         else
                         {
                             $auditLogs.Add([PSCustomObject]@{
-                                Message = "Employee: [$($employee.EmployeeId)], Revoke Cura-ECD Team entitlement: [$($pRef.name)] Already removed."
+                                Message = "Employee: [$($employee.EmployeeId)], Revoke Fierit-ECD Team entitlement: [$($pRef.name)] Already removed."
                                 IsError = $false
                             })
                         }
                     }
                     'NotFound' {
                         $auditLogs.Add([PSCustomObject]@{
-                                Message = "[$($employee.EmployeeId)] Cura-ECD account not found. Possibly already deleted, skipping action."
+                                Message = "[$($employee.EmployeeId)] Fierit-ECD account not found. Possibly already deleted, skipping action."
                                 IsError = $false
                             })
                     }
@@ -181,9 +181,9 @@ try {
         catch {
             $ex = $PSItem
             $errorObj = Resolve-HTTPError -ErrorObject $ex
-            Write-Verbose "[$($employee.EmployeeId)] Could not Revoke Cura-ECD Team entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+            Write-Verbose "[$($employee.EmployeeId)] Could not Revoke Fierit-ECD Team entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
             $auditLogs.Add([PSCustomObject]@{
-                    Message = "[$($employee.EmployeeId)] Could not Revoke Cura-ECD Team entitlement. Error: $($errorObj.FriendlyMessage)"
+                    Message = "[$($employee.EmployeeId)] Could not Revoke Fierit-ECD Team entitlement. Error: $($errorObj.FriendlyMessage)"
                     IsError = $true
                 })
         }
@@ -195,9 +195,9 @@ try {
 catch {
     $ex = $PSItem
     $errorObj = Resolve-HTTPError -ErrorObject $ex
-    Write-Verbose "Could not Revoke Cura-ECD Team entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+    Write-Verbose "Could not Revoke Fierit-ECD Team entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     $auditLogs.Add([PSCustomObject]@{
-            Message = "Could not Revoke Cura-ECD Team entitlement. Error: $($errorObj.FriendlyMessage)"
+            Message = "Could not Revoke Fierit-ECD Team entitlement. Error: $($errorObj.FriendlyMessage)"
             IsError = $true
         })
 }

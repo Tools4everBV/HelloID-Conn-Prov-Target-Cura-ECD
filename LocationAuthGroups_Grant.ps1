@@ -1,5 +1,5 @@
 ####################################################################
-# HelloID-Conn-Prov-Target-CuraECD-Entitlement-GranLocationAuthGroup
+# HelloID-Conn-Prov-Target-Fierit-ECD-Entitlement-GranLocationAuthGroup
 #
 # Version: 1.0.0
 ####################################################################
@@ -12,8 +12,8 @@ $success = $false
 $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 $subPermissions = [System.Collections.Generic.List[PSCustomObject]]::new()
 
-# Connector Configuration for pointing to the Cura Custom Contract Property
-$contractCustomProperty = { $_.Custom.CuraECDEmploymentIdentifier }
+# Connector Configuration for pointing to the Fierit Custom Contract Property
+$contractCustomProperty = { $_.Custom.FieritECDEmploymentIdentifier }
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
@@ -116,11 +116,11 @@ try {
 
             # Add an auditMessage showing what will happen during enforcement
             if ($dryRun -eq $true) {
-                Write-Warning "[DryRun] Grant CuraECD locationAuthGroup entitlement: [$($pRef.Name)] to: [$($p.DisplayName)] will be executed during enforcement"
+                Write-Warning "[DryRun] Grant Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)] to: [$($p.DisplayName)] will be executed during enforcement"
             }
 
             if (-not($dryRun -eq $true)) {
-                Write-Verbose "Granting CuraECD locationAuthGroup entitlement: [$($pRef.Name)]"
+                Write-Verbose "Granting Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)]"
                 $desiredLocationAuthGroups = [System.Collections.Generic.List[object]]::new()
                 if ($responseUser[0].locationauthorisationgroup.Length -gt 0) {
                     Write-Verbose 'Adding currently assigned locationAuthGroups'
@@ -133,7 +133,7 @@ try {
 
                 if ($desiredLocationAuthGroups.code -contains $newLocationAuthGroup.code) {
                     $auditLogs.Add([PSCustomObject]@{
-                            Message = "[$($employment.UserId)] Grant Cura-ECD locationAuthGroup entitlement: [$($pRef.Name)]. Already present"
+                            Message = "[$($employment.UserId)] Grant Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)]. Already present"
                             IsError = $false
                         })
                 } else {
@@ -153,7 +153,7 @@ try {
                     }
                     $responseUser = Invoke-RestMethod @splatPatchUserParams -UseBasicParsing -Verbose:$false
                     $auditLogs.Add([PSCustomObject]@{
-                            Message = "[$($employment.UserId)] Grant Cura-ECD locationAuthGroup entitlement: [$($pRef.Name)] was successful"
+                            Message = "[$($employment.UserId)] Grant Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)] was successful"
                             IsError = $false
                         })
                 }
@@ -166,9 +166,9 @@ try {
         } catch {
             $ex = $PSItem
             $errorObj = Resolve-HTTPError -ErrorObject $ex
-            Write-Verbose "[$($employment.UserId)] Could not Grant Cura-ECD locationAuthGroup entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+            Write-Verbose "[$($employment.UserId)] Could not Grant Fierit-ECD locationAuthGroup entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
             $auditLogs.Add([PSCustomObject]@{
-                    Message = "[$($employment.UserId)] Could not Grant Cura-ECD locationAuthGroup entitlement. Error: $($errorObj.FriendlyMessage)"
+                    Message = "[$($employment.UserId)] Could not Grant Fierit-ECD locationAuthGroup entitlement. Error: $($errorObj.FriendlyMessage)"
                     IsError = $true
                 })
         }
@@ -180,9 +180,9 @@ try {
 } catch {
     $ex = $PSItem
     $errorObj = Resolve-HTTPError -ErrorObject $ex
-    Write-Verbose "Could not Grant Cura-ECD locationAuthGroup entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+    Write-Verbose "Could not Grant Fierit-ECD locationAuthGroup entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     $auditLogs.Add([PSCustomObject]@{
-            Message = "Could not Grant Cura-ECD locationAuthGroup entitlement.Error: $($errorObj.FriendlyMessage)"
+            Message = "Could not Grant Fierit-ECD locationAuthGroup entitlement.Error: $($errorObj.FriendlyMessage)"
             IsError = $true
         })
 } finally {

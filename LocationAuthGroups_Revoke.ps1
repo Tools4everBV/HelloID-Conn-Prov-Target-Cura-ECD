@@ -1,5 +1,5 @@
 ######################################################################
-# HelloID-Conn-Prov-Target-CuraECD-Entitlement-RevokeLocationAuthGroup
+# HelloID-Conn-Prov-Target-Fierit-ECD-Entitlement-RevokeLocationAuthGroup
 #
 # Version: 1.0.0
 ######################################################################
@@ -104,7 +104,7 @@ try {
             if ($responseUser.Length -eq 0) {
                 $userFound = 'NotFound'
                 if ($dryRun -eq $true) {
-                    Write-Warning "[DryRun] [$($employment.UserId)] Cura-ECD account not found. Possibly already deleted, skipping action."
+                    Write-Warning "[DryRun] [$($employment.UserId)] Fierit-ECD account not found. Possibly already deleted, skipping action."
                 }
             } else {
                 $userFound = 'Found'
@@ -112,18 +112,18 @@ try {
 
             # Add an auditMessage showing what will happen during enforcement
             if ($dryRun -eq $true) {
-                Write-Warning "[DryRun] [$($employment.UserId)] Revoke CuraECD locationAuthGroup entitlement: [$($pRef.Name)] to: [$($p.DisplayName)] will be executed during enforcement"
+                Write-Warning "[DryRun] [$($employment.UserId)] Revoke Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)] to: [$($p.DisplayName)] will be executed during enforcement"
             }
 
             if (-not($dryRun -eq $true)) {
                 switch ($userFound) {
                     'Found' {
-                        Write-Verbose "Revoking CuraECD locationAuthGroup entitlement: [$($pRef.Name)]"
+                        Write-Verbose "Revoking Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)]"
 
                         if (($responseUser[0].locationauthorisationgroup.Length -eq 0) -or
                             ($responseUser[0].locationauthorisationgroup.code -notcontains $pRef.code)) {
 
-                            $auditMessage = "Revoke CuraECD locationAuthGroup entitlement: [$($pRef.Name)]. Already removed"
+                            $auditMessage = "Revoke Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)]. Already removed"
 
                         } else {
                             Write-Verbose 'Creating list of currently assigned locationAuthGroups'
@@ -147,7 +147,7 @@ try {
                                 Headers = $headers
                                 Body    = ($responseUser[0] | ConvertTo-Json -Depth 10)
                             }
-                            $auditMessage = "Revoke CuraECD locationAuthGroup entitlement: [$($pRef.Name)] was successful"
+                            $auditMessage = "Revoke Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)] was successful"
 
                             $responseUser = Invoke-RestMethod @splatPatchUserParams -UseBasicParsing -Verbose:$false
                         }
@@ -158,7 +158,7 @@ try {
                     }
                     'NotFound' {
                         $auditLogs.Add([PSCustomObject]@{
-                                Message = "[$($employment.UserId)] Cura-ECD account not found. Possibly already deleted, skipping action."
+                                Message = "[$($employment.UserId)] Fierit-ECD account not found. Possibly already deleted, skipping action."
                                 IsError = $false
                             })
                     }
@@ -167,9 +167,9 @@ try {
         } catch {
             $ex = $PSItem
             $errorObj = Resolve-HTTPError -ErrorObject $ex
-            Write-Verbose "[$($employment.UserId)] Could not Revoke Cura-ECD locationAuthGroup entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+            Write-Verbose "[$($employment.UserId)] Could not Revoke Fierit-ECD locationAuthGroup entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
             $auditLogs.Add([PSCustomObject]@{
-                    Message = "[$($employment.UserId)] Could not Revoke Cura-ECD locationAuthGroup entitlement. Error: $($errorObj.FriendlyMessage)"
+                    Message = "[$($employment.UserId)] Could not Revoke Fierit-ECD locationAuthGroup entitlement. Error: $($errorObj.FriendlyMessage)"
                     IsError = $true
                 })
         }
@@ -180,9 +180,9 @@ try {
 } catch {
     $ex = $PSItem
     $errorObj = Resolve-HTTPError -ErrorObject $ex
-    Write-Verbose "Could not Revoke Cura-ECD locationAuthGroup entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+    Write-Verbose "Could not Revoke Fierit-ECD locationAuthGroup entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     $auditLogs.Add([PSCustomObject]@{
-            Message = "Could not Revoke Cura-ECD locationAuthGroup entitlement. Error: $($errorObj.FriendlyMessage)"
+            Message = "Could not Revoke Fierit-ECD locationAuthGroup entitlement. Error: $($errorObj.FriendlyMessage)"
             IsError = $true
         })
 } finally {

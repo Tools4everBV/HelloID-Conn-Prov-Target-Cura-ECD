@@ -1,5 +1,5 @@
 ﻿#####################################################
-# HelloID-Conn-Prov-Target-CuraECD-PermissionRoles
+# HelloID-Conn-Prov-Target-Fierit-ECD-PermissionRoles
 #
 # Version: 1.0.0
 #####################################################
@@ -111,9 +111,9 @@ try {
 } catch {
     $ex = $PSItem
     $errorObj = Resolve-HTTPError -ErrorObject $ex
-    Write-Verbose "Could not retrieve CuraECD Role permissions. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+    Write-Verbose "Could not retrieve Fierit-ECD Role permissions. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     $auditLogs.Add([PSCustomObject]@{
-            Message = "Could not retrieve CuraECD Role permissions. Error: $($errorObj.FriendlyMessage)"
+            Message = "Could not retrieve Fierit-ECD Role permissions. Error: $($errorObj.FriendlyMessage)"
             IsError = $true
         })
 }

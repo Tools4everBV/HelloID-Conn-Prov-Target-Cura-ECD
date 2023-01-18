@@ -1,5 +1,5 @@
 #####################################################
-# HelloID-Conn-Prov-Target-Cura-ECD-Enable
+# HelloID-Conn-Prov-Target-Fierit-ECD-Enable
 #
 # Version: 1.0.0
 #####################################################
@@ -108,7 +108,7 @@ try {
     foreach ($employment in $aRef) {
         try {
             if ($dryRun -eq $true) {
-                Write-Warning "[DryRun] Enable Cura-ECD account [$($employment.EmployeeId)]  for: [$($p.DisplayName)] will be executed during enforcement"
+                Write-Warning "[DryRun] Enable Fierit-ECD account [$($employment.EmployeeId)]  for: [$($p.DisplayName)] will be executed during enforcement"
             }
             # Employee
             #   No action Needed
@@ -124,7 +124,7 @@ try {
             $responseUser.active = $true
 
             if (-not($dryRun -eq $true)) {
-                Write-Verbose "Enabling Cura-ECD account with accountReference: [$($employment.UserId)]"
+                Write-Verbose "Enabling Fierit-ECD account with accountReference: [$($employment.UserId)]"
                 $splatNewUser = @{
                     Uri     = "$($config.BaseUrl.Trim('/'))/users/user"
                     Method  = 'Patch'
@@ -142,9 +142,9 @@ try {
         } catch {
             $ex = $PSItem
             $errorObj = Resolve-HTTPError -ErrorObject $ex
-            Write-Verbose "[$($employment.UserId)] Could not Enable Cura-ECD account. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+            Write-Verbose "[$($employment.UserId)] Could not Enable Fierit-ECD account. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
             $auditLogs.Add([PSCustomObject]@{
-                    Message = "[$($employment.UserId)] Could not Enable Cura-ECD account. Error: $($errorObj.FriendlyMessage)"
+                    Message = "[$($employment.UserId)] Could not Enable Fierit-ECD account. Error: $($errorObj.FriendlyMessage)"
                     IsError = $true
                 })
         }
@@ -155,9 +155,9 @@ try {
 } catch {
     $ex = $PSItem
     $errorObj = Resolve-HTTPError -ErrorObject $ex
-    Write-Verbose "Could not Enable Cura-ECD account. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+    Write-Verbose "Could not Enable Fierit-ECD account. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     $auditLogs.Add([PSCustomObject]@{
-            Message = "Could not Enable Cura-ECD account. Error: $($errorObj.FriendlyMessage)"
+            Message = "Could not Enable Fierit-ECD account. Error: $($errorObj.FriendlyMessage)"
             IsError = $true
         })
 } finally {

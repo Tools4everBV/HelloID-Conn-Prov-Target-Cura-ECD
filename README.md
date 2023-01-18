@@ -1,5 +1,5 @@
 
-# HelloID-Conn-Prov-Target-Cura-ECD
+# HelloID-Conn-Prov-Target-Fierit-ECD
 
 | :warning: Warning |
 |:---------------------------|
@@ -31,7 +31,7 @@
 
 ## Introduction
 
-_HelloID-Conn-Prov-Target-Cura-ECD_ is a _target_ connector. Cura-ECD provides a set of REST APIs that allow you to programmatically interact with its data. The connector manages the Cura Employee, User account, Employee Teams, User LocationAuthorisationGroups, and User Roles with or without selectionAuthorisationGroup. The Employees and Account are both supported in the account LifeCycle, and there are three types of permissions to manage the authorizations. It supports multiple accounts for a HelloId Person based on Employment.
+_HelloID-Conn-Prov-Target-Fierit-ECD_ is a _target_ connector. Fierit-ECD, formerly known as CURA-ECD, provides a set of REST APIs that allow you to programmatically interact with its data. The connector manages the Fierit Employee, User account, Employee Teams, User LocationAuthorisationGroups, and User Roles with or without selectionAuthorisationGroup. The Employees and Account are both supported in the account LifeCycle, and there are three types of permissions to manage the authorizations. It supports multiple accounts for a HelloId Person based on Employment.
 
 
 ## Getting started
@@ -50,7 +50,7 @@ The following settings are required to connect to the API.
 | BaseUrl               | The URL to the API                 | Yes         |
 | TokenUrl              | The Token URL to the API.  *Example: https://{{CustomerUrl}}l:8443/fierit/api*                | Yes         |
 | DefaultTeamAssignmentGuid      | The URL to the API.   *Example: https://{{CustomerUrl}}.nl:8443/fierit/api/token/development-test*    | Yes         |
-| UseMappingSelectionAuthorisationGroup    | Use SelectionAuthorisationGroup Mapping, when disabled the default from Cura is used.            | Yes         |
+| UseMappingSelectionAuthorisationGroup    | Use SelectionAuthorisationGroup Mapping, when disabled the default from Fierit is used.            | Yes         |
 | MappingSelectionAuthGroupFileLocation      | The Path to the mapping file (HR => SelectionAuthorisationGroup 1=1) Example can be found in the asset folder            | Yes         |
 | csvDelimiter          | Mapping File CSV Separation Character              | Yes         |
 | IsDebug               | The URL to the API                 | Yes         |
@@ -60,7 +60,7 @@ The following settings are required to connect to the API.
  - IP Address is whitelisted (local Agent)
  - Connection Settings
  - A additional mapping between HR departments and/or Titles to SelectionAuthorisationGroup to assign a "Scope" on a Role
-- An custom property on the HelloID contract with a combination of the employeeCode and EmploymentCode named: [custom.CuraECDEmploymentIdentifier]
+- An custom property on the HelloID contract with a combination of the employeeCode and EmploymentCode named: [custom.FieritECDEmploymentIdentifier]
 Example:
 ```JavaScript
   function getValue() {
@@ -90,7 +90,7 @@ You can change this behavior in the `create.ps1` by setting the boolean `$update
 
 
 ##### Supported Action Details
-Using this connector you will have the ability to create and manage the following items in Cura ECD:
+Using this connector you will have the ability to create and manage the following items in Fierit ECD:
 
 | Files       |Description |Employee Account | User Account        |
 | ----------- | --------------|--------------    |-----------
@@ -106,8 +106,8 @@ Using this connector you will have the ability to create and manage the followin
 | Resource.ps1  | - |-|-
 
 ### Remarks
-- The web service is only Accessible with whitelisted IP addresses. So an Agent server is required. *Not sure if Cura supports DNS whitelisting*
-- The web service does not support Patch requests. So the user is retrieved from Cura, adds the new permission, and the user is updated with the current permission and newly permission. Therefore, concurrent sessions must be set to 1.
+- The web service is only Accessible with whitelisted IP addresses. So an Agent server is required. *Not sure if Fierit supports DNS whitelisting*
+- The web service does not support Patch requests. So the user is retrieved from Fierit, adds the new permission, and the user is updated with the current permission and newly permission. Therefore, concurrent sessions must be set to 1.
  - A dummy or Default Role for creating new users. It's required to set a role when creating a new User. Because they take place in the account lifecycle the first role cannot be managed through entitlements.
  - Because the Connector Support multiplies account per Persons, the permission Update script must also be used. You can place the Grant script here since this works in both situations.
 
@@ -128,7 +128,7 @@ Using this connector you will have the ability to create and manage the followin
 $firstProperty = @{ Expression = { $_.Details.Fte } ; Descending = $true }
 $secondProperty = @{ Expression = { $_.Details.HoursPerWeek }; Descending = $true }
 
-$employmentContractFilter     = { $_.Custom.CuraECDEmploymentIdentifier }  # Dienstverband
+$employmentContractFilter     = { $_.Custom.FieritECDEmploymentIdentifier }  # Dienstverband
 
  # Set to true if accounts in the target system must be updated
 $updatePerson = $true
@@ -141,13 +141,13 @@ $updatePerson = $true
 $firstProperty = @{ Expression = { $_.Details.Fte } ; Descending = $true }
 $secondProperty = @{ Expression = { $_.Details.HoursPerWeek }; Descending = $true }
 
-$employmentContractFilter     = { $_.Custom.CuraECDEmploymentIdentifier }  # Dienstverband
+$employmentContractFilter     = { $_.Custom.FieritECDEmploymentIdentifier }  # Dienstverband
   ```
 
 ##### All Permissions Scripts *(Grant)*
 
   ```PowerShell
-$employmentContractFilter     = { $_.Custom.CuraECDEmploymentIdentifier }  # Dienstverband
+$employmentContractFilter     = { $_.Custom.FieritECDEmploymentIdentifier }  # Dienstverband
   ```
 
 ## Getting help

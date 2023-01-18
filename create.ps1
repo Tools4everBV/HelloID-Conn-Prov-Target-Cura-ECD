@@ -1,5 +1,5 @@
 #####################################################
-# HelloID-Conn-Prov-Target-Cura-ECD-Create
+# HelloID-Conn-Prov-Target-Fierit-ECD-Create
 #
 # Version: 1.0.0
 #####################################################
@@ -11,7 +11,7 @@ $success = $false
 $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 $accountReferenceList = [System.Collections.Generic.List[PSCustomObject]]::new()
 
-$contractCustomProperty = { $_.Custom.CuraECDEmploymentIdentifier }
+$contractCustomProperty = { $_.Custom.FieritECDEmploymentIdentifier }
 
 # Primary Contract Calculation foreach employment
 $firstProperty = @{ Expression = { $_.Details.Fte } ; Descending = $true }
@@ -270,14 +270,14 @@ try {
 
             # Add an auditMessage showing what will happen during enforcement
             if ($dryRun -eq $true) {
-                Write-Warning "[DryRun] $action Cura-ECD account [$($employment.Name)] for: [$($p.DisplayName)], will be executed during enforcement"
+                Write-Warning "[DryRun] $action Fierit-ECD account [$($employment.Name)] for: [$($p.DisplayName)], will be executed during enforcement"
             }
 
             # Process
             if (-not($dryRun -eq $true)) {
                 switch ($action) {
                     'Create-Correlate' {
-                        Write-Verbose 'Creating and correlating Cura-ECD account'
+                        Write-Verbose 'Creating and correlating Fierit-ECD account'
                         # Create employee
                         Write-Verbose "Create employee [$($accountEmployee.employeecode)]"
                         $splatNewEmployee = @{
@@ -306,7 +306,7 @@ try {
                     }
 
                     'Update-Correlate' {
-                        Write-Verbose 'Updating and correlating Cura-ECD account'
+                        Write-Verbose 'Updating and correlating Fierit-ECD account'
                         # Update employee
                         Write-Verbose "Update employee [$($accountEmployee.employeecode)]"
                         Merge-Object -Object $responseEmployee[0] -Updates $accountEmployee  -Verbose:$false
@@ -371,7 +371,7 @@ try {
                     }
 
                     'Correlate' {
-                        Write-Verbose 'Correlating Cura-ECD account'
+                        Write-Verbose 'Correlating Fierit-ECD account'
                         # Get User
                         Write-Verbose "Get User with employeeCode [$($accountUser.employeecode)]"
                         $splatGetUser = @{
@@ -406,9 +406,9 @@ try {
         } catch {
             $ex = $PSItem
             $errorObj = Resolve-HTTPError -ErrorObject $ex
-            Write-Verbose "[$($accountEmployee.employeecode)] Could not $action Cura-ECD account. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+            Write-Verbose "[$($accountEmployee.employeecode)] Could not $action Fierit-ECD account. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
             $auditLogs.Add([PSCustomObject]@{
-                    Message = "[$($accountEmployee.employeecode)] Could not $action Cura-ECD account. Error: $($errorObj.FriendlyMessage)"
+                    Message = "[$($accountEmployee.employeecode)] Could not $action Fierit-ECD account. Error: $($errorObj.FriendlyMessage)"
                     IsError = $true
                 })
         }
@@ -419,9 +419,9 @@ try {
 } catch {
     $ex = $PSItem
     $errorObj = Resolve-HTTPError -ErrorObject $ex
-    Write-Verbose "Could not $action Cura-ECD account. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+    Write-Verbose "Could not $action Fierit-ECD account. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     $auditLogs.Add([PSCustomObject]@{
-            Message = "Could not $action Cura-ECD account. Error: $($errorObj.FriendlyMessage)"
+            Message = "Could not $action Fierit-ECD account. Error: $($errorObj.FriendlyMessage)"
             IsError = $true
         })
 } finally {

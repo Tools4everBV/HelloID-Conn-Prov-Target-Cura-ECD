@@ -1,5 +1,5 @@
 #####################################################
-# HelloID-Conn-Prov-Target-Cura-ECD-Permissions
+# HelloID-Conn-Prov-Target-Fierit-ECD-Permissions
 #
 # Version: 1.0.0
 #####################################################
@@ -94,17 +94,17 @@ try {
     }
 
     $permissions = Invoke-RestMethod @splatRequestTeams -UseBasicParsing -Verbose:$false
-    Write-Information "Successfully retrieved teams from CuraECD. Result count: $($permissions.Key.Count)"
+    Write-Information "Successfully retrieved teams from Fierit-ECD. Result count: $($permissions.Key.Count)"
 }
 catch {
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
         $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
         $errorObj = Resolve-HTTPError -ErrorObject $ex
-        $errorMessage = "Could not retrieve Cura-ECD permissions. Error: $($errorObj.ErrorMessage)"
+        $errorMessage = "Could not retrieve Fierit-ECD permissions. Error: $($errorObj.ErrorMessage)"
     }
     else {
-        $errorMessage = "Could not retrieve Cura-ECD permissions. Error: $($ex.Exception.Message)"
+        $errorMessage = "Could not retrieve Fierit-ECD permissions. Error: $($ex.Exception.Message)"
     }
     Write-Verbose $errorMessage
 }

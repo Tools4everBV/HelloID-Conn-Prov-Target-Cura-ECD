@@ -1,5 +1,5 @@
 #####################################################
-# HelloID-Conn-Prov-Target-Cura-ECD-Entitlement-Grant
+# HelloID-Conn-Prov-Target-Fierit-ECD-Entitlement-Grant
 #
 # Version: 1.0.0
 #####################################################
@@ -11,8 +11,8 @@ $pRef = $permissionReference | ConvertFrom-Json
 $success = $false
 $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
 $subPermissions = [System.Collections.Generic.List[PSCustomObject]]::new()
-# Connector Configuration for pointing to the Cura Custom Contract Property
-$contractCustomProperty = { $_.Custom.CuraECDEmploymentIdentifier }
+# Connector Configuration for pointing to the Fierit Custom Contract Property
+$contractCustomProperty = { $_.Custom.FieritECDEmploymentIdentifier }
 
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
@@ -128,11 +128,11 @@ try {
             $user = Invoke-RestMethod @splatRequestUser -UseBasicParsing -Verbose:$false
 
             if ($dryRun -eq $true) {
-                Write-Warning "[DryRun] Grant Cura-ECD Team entitlement: [$($pRef.name)] to: [$($p.DisplayName)] will be executed during enforcement"
+                Write-Warning "[DryRun] Grant Fierit-ECD Team entitlement: [$($pRef.name)] to: [$($p.DisplayName)] will be executed during enforcement"
             }
         
             if (-not($dryRun -eq $true)) {
-                Write-Verbose "Granting Cura-ECD Team entitlement: [$($pRef.name)] for employee: [$($employee.EmployeeId)]"
+                Write-Verbose "Granting Fierit-ECD Team entitlement: [$($pRef.name)] for employee: [$($employee.EmployeeId)]"
                 $newTeam = [PSCustomObject]@{
                     id        = $pRef.id
                     startdate = (Get-Date -f "yyyy-MM-dd")
@@ -154,13 +154,13 @@ try {
                     $null = Invoke-RestMethod @splatRequestUpdateUser -UseBasicParsing -Verbose:$false
 
                     $auditLogs.Add([PSCustomObject]@{
-                        Message = "Employee: [$($employee.EmployeeId)], Grant Cura-ECD Team entitlement: [$($pRef.name)] was successful"
+                        Message = "Employee: [$($employee.EmployeeId)], Grant Fierit-ECD Team entitlement: [$($pRef.name)] was successful"
                         IsError = $false
                     })
                 }
                 else {
                     $auditLogs.Add([PSCustomObject]@{
-                            Message = "Employee: [$($employee.EmployeeId)] Grant Cura-ECD team entitlement: [$($pRef.name)]. Already present"
+                            Message = "Employee: [$($employee.EmployeeId)] Grant Fierit-ECD team entitlement: [$($pRef.name)]. Already present"
                             IsError = $false
                         })
                 }
@@ -174,9 +174,9 @@ try {
         catch {
             $ex = $PSItem
             $errorObj = Resolve-HTTPError -ErrorObject $ex
-            Write-Verbose "[$($employee.EmployeeId)] Could not Grant Cura-ECD Team entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+            Write-Verbose "[$($employee.EmployeeId)] Could not Grant Fierit-ECD Team entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
             $auditLogs.Add([PSCustomObject]@{
-                    Message = "[$($employee.EmployeeId)] Could not Grant Cura-ECD Team entitlement. Error: $($errorObj.FriendlyMessage)"
+                    Message = "[$($employee.EmployeeId)] Could not Grant Fierit-ECD Team entitlement. Error: $($errorObj.FriendlyMessage)"
                     IsError = $true
                 })
         }
@@ -188,9 +188,9 @@ try {
 catch {
     $ex = $PSItem
     $errorObj = Resolve-HTTPError -ErrorObject $ex
-    Write-Verbose "Could not Grant Cura-ECD Team entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+    Write-Verbose "Could not Grant Fierit-ECD Team entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     $auditLogs.Add([PSCustomObject]@{
-            Message = "Could not Grant Cura-ECD Team entitlement entitlement.Error: $($errorObj.FriendlyMessage)"
+            Message = "Could not Grant Fierit-ECD Team entitlement entitlement.Error: $($errorObj.FriendlyMessage)"
 
             IsError = $true
         })

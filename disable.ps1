@@ -1,5 +1,5 @@
 #####################################################
-# HelloID-Conn-Prov-Target-Cura-ECD-Disable
+# HelloID-Conn-Prov-Target-Fierit-ECD-Disable
 #
 # Version: 1.0.0
 #####################################################
@@ -109,7 +109,7 @@ try {
     foreach ($employment in $aRef) {
         try {
             if ($dryRun -eq $true) {
-                Write-Warning "[DryRun] Disable Cura-ECD account [$($employment.EmployeeId)] for: [$($p.DisplayName)] will be executed during enforcement"
+                Write-Warning "[DryRun] Disable Fierit-ECD account [$($employment.EmployeeId)] for: [$($p.DisplayName)] will be executed during enforcement"
             }
             # Employee
             #   No action Needed
@@ -125,7 +125,7 @@ try {
             if ($null -eq $responseUser) {
                 $userFound = 'NotFound'
                 if ($dryRun -eq $true) {
-                    Write-Warning "[DryRun] [$($employment.UserId)] Cura-ECD account not found. Possibly already deleted, skipping action."
+                    Write-Warning "[DryRun] [$($employment.UserId)] Fierit-ECD account not found. Possibly already deleted, skipping action."
                 }
             } else {
                 $userFound = 'Found'
@@ -134,7 +134,7 @@ try {
             if (-not($dryRun -eq $true)) {
                 switch ($userFound) {
                     'Found' {
-                        Write-Verbose "Disabling Cura-ECD account with accountReference: [$($employment.UserId)]"
+                        Write-Verbose "Disabling Fierit-ECD account with accountReference: [$($employment.UserId)]"
                         $responseUser.active = $false
 
                         $splatNewUser = @{
@@ -153,7 +153,7 @@ try {
                     }
                     'NotFound' {
                         $auditLogs.Add([PSCustomObject]@{
-                                Message = "[$($employment.UserId)] Cura-ECD account not found. Possibly already deleted, skipping action."
+                                Message = "[$($employment.UserId)] Fierit-ECD account not found. Possibly already deleted, skipping action."
                                 IsError = $false
                             })
                     }
@@ -162,9 +162,9 @@ try {
         } catch {
             $ex = $PSItem
             $errorObj = Resolve-HTTPError -ErrorObject $ex
-            Write-Verbose "[$($employment.UserId)] Could not Disable Cura-ECD account. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+            Write-Verbose "[$($employment.UserId)] Could not Disable Fierit-ECD account. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
             $auditLogs.Add([PSCustomObject]@{
-                    Message = "[$($employment.UserId)] Could not Disable Cura-ECD account. Error: $($errorObj.FriendlyMessage)"
+                    Message = "[$($employment.UserId)] Could not Disable Fierit-ECD account. Error: $($errorObj.FriendlyMessage)"
                     IsError = $true
                 })
         }
@@ -175,9 +175,9 @@ try {
 } catch {
     $ex = $PSItem
     $errorObj = Resolve-HTTPError -ErrorObject $ex
-    Write-Verbose "Could not Disable Cura-ECD account. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+    Write-Verbose "Could not Disable Fierit-ECD account. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     $auditLogs.Add([PSCustomObject]@{
-            Message = "Could not Disable Cura-ECD account. Error: $($errorObj.FriendlyMessage)"
+            Message = "Could not Disable Fierit-ECD account. Error: $($errorObj.FriendlyMessage)"
             IsError = $true
         })
 } finally {

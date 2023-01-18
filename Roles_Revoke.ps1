@@ -1,5 +1,5 @@
 #########################################################
-# HelloID-Conn-Prov-Target-CuraECD-Entitlement-RevokeRole
+# HelloID-Conn-Prov-Target-Fierit-ECD-Entitlement-RevokeRole
 #
 # Version: 1.0.0
 #########################################################
@@ -104,7 +104,7 @@ try {
             if ($responseUser.Length -eq 0) {
                 $userFound = 'NotFound'
                 if ($dryRun -eq $true) {
-                    Write-Warning "[DryRun] [$($employment.UserId)] Cura-ECD account not found. Possibly already deleted, skipping action."
+                    Write-Warning "[DryRun] [$($employment.UserId)] Fierit-ECD account not found. Possibly already deleted, skipping action."
                 }
             } else {
                 $userFound = 'Found'
@@ -112,16 +112,16 @@ try {
 
             # Add an auditMessage showing what will happen during enforcement
             if ($dryRun -eq $true) {
-                Write-Warning "[DryRun] [$($employment.UserId)] Revoke CuraECD role entitlement: [$($pRef.Name)] to: [$($p.DisplayName)] will be executed during enforcement"
+                Write-Warning "[DryRun] [$($employment.UserId)] Revoke Fierit-ECD role entitlement: [$($pRef.Name)] to: [$($p.DisplayName)] will be executed during enforcement"
             }
 
             if (-not($dryRun -eq $true)) {
                 switch ($userFound) {
                     'Found' {
-                        Write-Verbose "Revoking CuraECD role entitlement: [$($pRef.Name)]"
+                        Write-Verbose "Revoking Fierit-ECD role entitlement: [$($pRef.Name)]"
 
                         if (($responseUser[0].Role.Length -eq 0) -or (($responseUser[0].Role.id -notcontains $pRef.id))) {
-                            $auditMessage = "[$($employment.UserId)] Revoke CuraECD Role entitlement: [$($pRef.Name)]. Already removed"
+                            $auditMessage = "[$($employment.UserId)] Revoke Fierit-ECD Role entitlement: [$($pRef.Name)]. Already removed"
                         } else {
                             Write-Verbose 'Creating list of currently assigned roles'
                             $currentRoles = [System.Collections.Generic.List[object]]::new()
@@ -150,7 +150,7 @@ try {
                                 Headers = $headers
                             }
                             $responseUser = Invoke-RestMethod @splatPatchUserParams -UseBasicParsing -Verbose:$false
-                            $auditMessage = "[$($employment.UserId)] Revoke CuraECD role entitlement: [$($pRef.Name)] was successful"
+                            $auditMessage = "[$($employment.UserId)] Revoke Fierit-ECD role entitlement: [$($pRef.Name)] was successful"
                         }
                         $auditLogs.Add([PSCustomObject]@{
                                 Message = $auditMessage
@@ -159,7 +159,7 @@ try {
                     }
                     'NotFound' {
                         $auditLogs.Add([PSCustomObject]@{
-                                Message = "[$($employment.UserId)] Cura-ECD account not found. Possibly already deleted, skipping action."
+                                Message = "[$($employment.UserId)] Fierit-ECD account not found. Possibly already deleted, skipping action."
                                 IsError = $false
                             })
                     }
@@ -168,9 +168,9 @@ try {
         } catch {
             $ex = $PSItem
             $errorObj = Resolve-HTTPError -ErrorObject $ex
-            Write-Verbose "[$($employment.UserId)] Could not Revoke Cura-ECD Role entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+            Write-Verbose "[$($employment.UserId)] Could not Revoke Fierit-ECD Role entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
             $auditLogs.Add([PSCustomObject]@{
-                    Message = "[$($employment.UserId)] Could not Revoke Cura-ECD Role entitlement. Error: $($errorObj.FriendlyMessage)"
+                    Message = "[$($employment.UserId)] Could not Revoke Fierit-ECD Role entitlement. Error: $($errorObj.FriendlyMessage)"
                     IsError = $true
                 })
         }
@@ -181,9 +181,9 @@ try {
 } catch {
     $ex = $PSItem
     $errorObj = Resolve-HTTPError -ErrorObject $ex
-    Write-Verbose "Could not Revoke Cura-ECD Role entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+    Write-Verbose "Could not Revoke Fierit-ECD Role entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     $auditLogs.Add([PSCustomObject]@{
-            Message = "Could not Revoke Cura-ECD Role entitlement. Error: $($errorObj.FriendlyMessage)"
+            Message = "Could not Revoke Fierit-ECD Role entitlement. Error: $($errorObj.FriendlyMessage)"
             IsError = $true
         })
 } finally {

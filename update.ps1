@@ -1,5 +1,5 @@
 #####################################################
-# HelloID-Conn-Prov-Target-Cura-ECD-Update
+# HelloID-Conn-Prov-Target-Fierit-ECD-Update
 #
 # Version: 1.0.0
 #####################################################
@@ -68,7 +68,7 @@ $accountUser = [PSCustomObject]@{
     )
 }
 
-$contractCustomProperty = { $_.Custom.CuraECDEmploymentIdentifier }
+$contractCustomProperty = { $_.Custom.FieritECDEmploymentIdentifier }
 
 # Primary Contract Calculation foreach employment
 $firstProperty = @{ Expression = { $_.Details.Fte } ; Descending = $true }
@@ -329,7 +329,7 @@ try {
             $currentAccount = $currentAccountList[$accountNr]
             # Add an auditMessage showing what will happen during enforcement
             if ($dryRun -eq $true) {
-                Write-Warning "[DryRun] Create Cura-ECD account [$accountNr] for: [$($p.DisplayName)], will be executed during enforcement"
+                Write-Warning "[DryRun] Create Fierit-ECD account [$accountNr] for: [$($p.DisplayName)], will be executed during enforcement"
             } else {
                 switch ($currentAccount.EmployeeFound) {
                     'Found' {
@@ -417,7 +417,7 @@ try {
         } catch {
             $ex = $PSItem
             $errorObj = Resolve-HTTPError -ErrorObject $ex
-            $errorMessage = "[$accountNr] Could not Create Cura-ECD account. Error:  $($ex.Exception.Message), $($errorObj.FriendlyMessage)"
+            $errorMessage = "[$accountNr] Could not Create Fierit-ECD account. Error:  $($ex.Exception.Message), $($errorObj.FriendlyMessage)"
             Write-Verbose $errorMessage
             $auditLogs.Add([PSCustomObject]@{
                     Action  = 'CreateAccount'
@@ -435,7 +435,7 @@ try {
             $currentAccount = $null
             $currentAccount = $currentAccountList[$accountNr]
             if ($dryRun -eq $true) {
-                Write-Warning "[DryRun] Update Cura-ECD account [$accountNr] for: [$($p.DisplayName)], will be executed during enforcement"
+                Write-Warning "[DryRun] Update Fierit-ECD account [$accountNr] for: [$($p.DisplayName)], will be executed during enforcement"
             } else {
                 #($dryRun -eq $true) {
                 switch ($currentAccount.EmployeeFound) {
@@ -488,7 +488,7 @@ try {
                                     # User
                                     $auditLogs.Add([PSCustomObject]@{
                                             Action  = 'UpdateAccount'
-                                            Message = "[$accountNr] Could not Update Cura-ECD account User Acocunt seems to be deleted from Cura"
+                                            Message = "[$accountNr] Could not Update Fierit-ECD account User Acocunt seems to be deleted from Fierit"
                                             IsError = $true
                                         })
                                     break
@@ -511,7 +511,7 @@ try {
                         # Employee
                         $auditLogs.Add([PSCustomObject]@{
                                 Action  = 'UpdateAccount'
-                                Message = "[$accountNr] Could not Update Cura-ECD account, Employee Acocunt seems to be deleted from Cura"
+                                Message = "[$accountNr] Could not Update Fierit-ECD account, Employee Acocunt seems to be deleted from Fierit"
                                 IsError = $true
                             })
                         break
@@ -521,7 +521,7 @@ try {
         } catch {
             $ex = $PSItem
             $errorObj = Resolve-HTTPError -ErrorObject $ex
-            $errorMessage = "[$accountNr] Could not Update Cura-ECD account. Error:  $($ex.Exception.Message), $($errorObj.FriendlyMessage)"
+            $errorMessage = "[$accountNr] Could not Update Fierit-ECD account. Error:  $($ex.Exception.Message), $($errorObj.FriendlyMessage)"
             Write-Verbose $errorMessage
             $auditLogs.Add([PSCustomObject]@{
                     Action  = 'UpdateAccount'
@@ -540,7 +540,7 @@ try {
             $currentAccount = $null
             $currentAccount = $currentAccountList[$accountNr]
             if ($dryRun -eq $true) {
-                Write-Warning "[DryRun] Delete Cura-ECD account [$accountNr] for: [$($p.DisplayName)], will be executed during enforcement"
+                Write-Warning "[DryRun] Delete Fierit-ECD account [$accountNr] for: [$($p.DisplayName)], will be executed during enforcement"
             } else {
                 switch ($currentAccount.EmployeeFound) {
                     'Found' {
@@ -551,7 +551,7 @@ try {
                             Write-Verbose "Revoke All Teams assigned to the employee [$($currentAccount.CurrentEmployee.team.name -join ',')]"
                             $auditLogsIfRevokeSuccess.Add([PSCustomObject]@{
                                     Action  = 'DeleteAccount'
-                                    Message = "[$accountNr] Revoke CuraECD Team entitlement(s): [$($currentAccount.CurrentEmployee.team.name -join ',')] was successful"
+                                    Message = "[$accountNr] Revoke Fierit-ECD Team entitlement(s): [$($currentAccount.CurrentEmployee.team.name -join ',')] was successful"
                                     IsError = $false
                                 })
                             $currentAccount.CurrentEmployee.PSObject.Properties.Remove('team')
@@ -582,7 +582,7 @@ try {
                                 Write-Verbose "Revoke All Locationauthorisationgroup(s) [$($currentAccount.CurrentUser.locationauthorisationgroup.code -join ',')]"
                                 $auditLogsIfRevokeSuccess.Add([PSCustomObject]@{
                                         Action  = 'DeleteAccount'
-                                        Message = "[$accountNr] Revoke CuraECD locationAuthGroup entitlement(s): [$($currentAccount.CurrentUser.locationauthorisationgroup.code -join ',')] was successful"
+                                        Message = "[$accountNr] Revoke Fierit-ECD locationAuthGroup entitlement(s): [$($currentAccount.CurrentUser.locationauthorisationgroup.code -join ',')] was successful"
                                         IsError = $false
                                     })
                                 $currentAccount.CurrentUser.Locationauthorisationgroup = $null
@@ -592,7 +592,7 @@ try {
                                 Write-Verbose "Revoke All assigned roles and assign default group [$($currentAccount.CurrentUser.Role.code -join ',')]"
                                 $auditLogsIfRevokeSuccess.Add([PSCustomObject]@{
                                         Action  = 'DeleteAccount'
-                                        Message = "[$accountNr] Revoke CuraECD Role entitlement(s): [$($currentAccount.CurrentUser.Role.code -join ',')] was successful"
+                                        Message = "[$accountNr] Revoke Fierit-ECD Role entitlement(s): [$($currentAccount.CurrentUser.Role.code -join ',')] was successful"
                                         IsError = $false
                                     })
                                 $currentAccount.CurrentUser.role = @(@{
@@ -620,7 +620,7 @@ try {
                         } else {
                             $auditLogs.Add([PSCustomObject]@{
                                     Action  = 'DeleteAccount'
-                                    Message = "[$accountNr] Cura-ECD User account not found. Possibly already deleted, skipping action."
+                                    Message = "[$accountNr] Fierit-ECD User account not found. Possibly already deleted, skipping action."
                                     IsError = $false
                                 })
                             break
@@ -630,7 +630,7 @@ try {
                     'NotFound' {
                         $auditLogs.Add([PSCustomObject]@{
                                 Action  = 'DeleteAccount'
-                                Message = "[$accountNr] Cura-ECD Employee account not found. Possibly already deleted, skipping action."
+                                Message = "[$accountNr] Fierit-ECD Employee account not found. Possibly already deleted, skipping action."
                                 IsError = $false
                             })
                         break
@@ -640,7 +640,7 @@ try {
         } catch {
             $ex = $PSItem
             $errorObj = Resolve-HTTPError -ErrorObject $ex
-            $errorMessage = "[$accountNr] Could not Delete Cura-ECD account. Error:  $($ex.Exception.Message), $($errorObj.FriendlyMessage)"
+            $errorMessage = "[$accountNr] Could not Delete Fierit-ECD account. Error:  $($ex.Exception.Message), $($errorObj.FriendlyMessage)"
             Write-Verbose $errorMessage
             $auditLogs.Add([PSCustomObject]@{
                     Action  = 'DeleteAccount'
@@ -658,9 +658,9 @@ try {
 } catch {
     $ex = $PSItem
     $errorObj = Resolve-HTTPError -ErrorObject $ex
-    Write-Verbose "Could not Update Cura-ECD account. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+    Write-Verbose "Could not Update Fierit-ECD account. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     $auditLogs.Add([PSCustomObject]@{
-            Message = "Could not Update Cura-ECD account. Error: $($errorObj.FriendlyMessage)"
+            Message = "Could not Update Fierit-ECD account. Error: $($errorObj.FriendlyMessage)"
             IsError = $true
         })
 } finally {

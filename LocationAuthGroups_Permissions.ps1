@@ -1,5 +1,5 @@
 ﻿################################################################
-# HelloID-Conn-Prov-Target-CuraECD-PermissionLocationAuthGroups
+# HelloID-Conn-Prov-Target-Fierit-ECD-PermissionLocationAuthGroups
 #
 # Version: 1.0.0
 ################################################################
@@ -109,9 +109,9 @@ try {
 } catch {
     $ex = $PSItem
     $errorObj = Resolve-HTTPError -ErrorObject $ex
-    Write-Verbose "Could not retrieve CuraECD location authorisation groups permissions. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+    Write-Verbose "Could not retrieve Fierit-ECD location authorisation groups permissions. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     $auditLogs.Add([PSCustomObject]@{
-            Message = "Could not retrieve CuraECD location authorisation groups permissions. Error: $($errorObj.FriendlyMessage)"
+            Message = "Could not retrieve Fierit-ECD location authorisation groups permissions. Error: $($errorObj.FriendlyMessage)"
             IsError = $true
         })
 }

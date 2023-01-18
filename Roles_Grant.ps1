@@ -1,5 +1,5 @@
 ﻿########################################################
-# HelloID-Conn-Prov-Target-CuraECD-Entitlement-GrantRole
+# HelloID-Conn-Prov-Target-Fierit-ECD-Entitlement-GrantRole
 #
 # Version: 1.0.0
 ########################################################
@@ -30,7 +30,7 @@ if ($null -eq $config.UseMappingSelectionAuthorisationGroup) {
 $mappingLookupProperty1 = { $_.Department.ExternalId }
 $mappingLookupProperty2 = { $_.Title.ExternalId }  # Optional
 
-$contractCustomProperty = { $_.Custom.CuraECDEmploymentIdentifier }
+$contractCustomProperty = { $_.Custom.FieritECDEmploymentIdentifier }
 
 # Primary Contract Calculation foreach employment.
 $firstProperty = @{ Expression = { $_.Details.Fte } ; Descending = $true }
@@ -107,7 +107,7 @@ function Resolve-HTTPError {
     }
 }
 
-function Get-CuraSAGroupFromHelloIDContract {
+function Get-FieritSAGroupFromHelloIDContract {
     [Cmdletbinding()]
     param(
         [parameter(Mandatory)]
@@ -222,20 +222,20 @@ try {
                     MappingColumnName1   = 'department.id'
                     MappingColumnName2   = 'title.id'
                 }
-                $mappedSelectionAuthorisationGroupCode = (Get-CuraSAGroupFromHelloIDContract @splat).CuraSelectionAuthorisationGroup
+                $mappedSelectionAuthorisationGroupCode = (Get-FieritSAGroupFromHelloIDContract @splat).FieritSelectionAuthorisationGroup
             }
 
             # Add an auditMessage showing what will happen during enforcement
             if ($dryRun -eq $true) {
                 if ($config.UseMappingSelectionAuthorisationGroup) {
-                    Write-Warning "[DryRun] [$($employment.UserId)] Grant CuraECD role entitlement: [$($pRef.Name) | $mappedSelectionAuthorisationGroupCode] to: [$($p.DisplayName)] will be executed during enforcement"
+                    Write-Warning "[DryRun] [$($employment.UserId)] Grant Fierit-ECD role entitlement: [$($pRef.Name) | $mappedSelectionAuthorisationGroupCode] to: [$($p.DisplayName)] will be executed during enforcement"
                 } else {
-                    Write-Warning "[DryRun] [$($employment.UserId)] Grant CuraECD role entitlement: [$($pRef.Name)] to: [$($p.DisplayName)] will be executed during enforcement"
+                    Write-Warning "[DryRun] [$($employment.UserId)] Grant Fierit-ECD role entitlement: [$($pRef.Name)] to: [$($p.DisplayName)] will be executed during enforcement"
                 }
             }
 
             if (-not($dryRun -eq $true)) {
-                Write-Verbose "Granting CuraECD role entitlement: [$($pRef.Name)]"
+                Write-Verbose "Granting Fierit-ECD role entitlement: [$($pRef.Name)]"
                 $desiredRoles = [System.Collections.Generic.List[object]]::new()
 
                 if ($responseUser[0].Role.Length -gt 0) {
@@ -260,10 +260,10 @@ try {
                 $existingRole = $null
                 $existingRole = $desiredRoles | Where-Object { $_.id -eq $newRole.id }
                 if ( $null -ne $existingRole -and $config.UseMappingSelectionAuthorisationGroup -eq $false) {
-                    $auditMessage = "Grant Cura-ECD role entitlement: [$($pRef.Name)]. Already present"
+                    $auditMessage = "Grant Fierit-ECD role entitlement: [$($pRef.Name)]. Already present"
 
                 } elseif (($null -ne $existingRole) -and (($config.UseMappingSelectionAuthorisationGroup -eq $true) -and ($existingRole.selectionauthorisationgroup.code -eq $mappedSelectionAuthorisationGroupCode))) {
-                    $auditMessage = "Grant Cura-ECD role entitlement: [$($pRef.Name)]. Already present with correct SelectionAuthorisationGroup"
+                    $auditMessage = "Grant Fierit-ECD role entitlement: [$($pRef.Name)]. Already present with correct SelectionAuthorisationGroup"
 
                 } else {
                     if ($config.UseMappingSelectionAuthorisationGroup) {
@@ -286,9 +286,9 @@ try {
                     $responseUser = Invoke-RestMethod @splatPatchUserParams -UseBasicParsing -Verbose:$false
 
                     if ($config.UseMappingSelectionAuthorisationGroup) {
-                        $auditMessage = "Grant Cura-ECD role entitlement: [$($pRef.Name)] with Selection Group [$mappedSelectionAuthorisationGroupCode] was successful"
+                        $auditMessage = "Grant Fierit-ECD role entitlement: [$($pRef.Name)] with Selection Group [$mappedSelectionAuthorisationGroupCode] was successful"
                     } else {
-                        $auditMessage = "Grant Cura-ECD role entitlement: [$($pRef.Name)] was successful"
+                        $auditMessage = "Grant Fierit-ECD role entitlement: [$($pRef.Name)] was successful"
                     }
                 }
                 $auditLogs.Add([PSCustomObject]@{
@@ -311,9 +311,9 @@ try {
         } catch {
             $ex = $PSItem
             $errorObj = Resolve-HTTPError -ErrorObject $ex
-            Write-Verbose "[$($employment.UserId)] Could not Grant Cura-ECD Role entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+            Write-Verbose "[$($employment.UserId)] Could not Grant Fierit-ECD Role entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
             $auditLogs.Add([PSCustomObject]@{
-                    Message = "[$($employment.UserId)] Could not Grant Cura-ECD Role entitlement. Error: $($errorObj.FriendlyMessage)"
+                    Message = "[$($employment.UserId)] Could not Grant Fierit-ECD Role entitlement. Error: $($errorObj.FriendlyMessage)"
                     IsError = $true
                 })
         }
@@ -324,9 +324,9 @@ try {
 } catch {
     $ex = $PSItem
     $errorObj = Resolve-HTTPError -ErrorObject $ex
-    Write-Verbose "Could not Grant Cura-ECD Role entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+    Write-Verbose "Could not Grant Fierit-ECD Role entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     $auditLogs.Add([PSCustomObject]@{
-            Message = "Could not Grant Cura-ECD Role entitlement. Error: $($errorObj.FriendlyMessage)"
+            Message = "Could not Grant Fierit-ECD Role entitlement. Error: $($errorObj.FriendlyMessage)"
             IsError = $true
         })
 } finally {
