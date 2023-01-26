@@ -31,7 +31,7 @@
 
 ## Introduction
 
-_HelloID-Conn-Prov-Target-Fierit-ECD_ is a _target_ connector. Fierit-ECD, formerly known as CURA-ECD, provides a set of REST APIs that allow you to programmatically interact with its data. The connector manages the Fierit Employee, User account, Employee Teams, User LocationAuthorisationGroups, and User Roles with or without selectionAuthorisationGroup. The Employees and Account are both supported in the account LifeCycle, and there are three types of permissions to manage the authorizations. It supports multiple accounts for a HelloId Person based on Employment.
+_HelloID-Conn-Prov-Target-Fierit-ECD_ is a _target_ connector. Fierit-ECD, formerly known as Fierit-ECD, provides a set of REST APIs that allow you to programmatically interact with its data. The connector manages the Fierit Employee, User account, Employee Teams, User LocationAuthorisationGroups, and User Roles with or without selectionAuthorisationGroup. The Employees and Account are both supported in the account LifeCycle, and there are three types of permissions to manage the authorizations. It supports multiple accounts for a HelloId Person based on Employment.
 
 
 ## Getting started
