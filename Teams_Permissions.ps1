@@ -48,23 +48,20 @@ function Get-AccessToken {
     try {
         $tokenHeaders = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
         $tokenHeaders.Add('Content-Type', 'application/x-www-form-urlencoded')
-
         $body = @{
-            grant_type        = 'urn:ietf:params:oauth:grant-type:token-exchange'
-            client_id         = $config.ClientId
-            client_secret     = $config.ClientSecret
-            organisationId    = $config.OrganisationId
-            environment       = $config.Environment
-            audience          = $config.Audience
-            requested_subject = $config.RequestedSubject
+            grant_type     = 'client_credentials'#'urn:ietf:params:oauth:grant-type:token-exchange'
+            client_id      = $config.ClientId
+            client_secret  = $config.ClientSecret
+            organisationId = $config.OrganisationId
+            environment    = $config.Environment
         }
         $response = Invoke-RestMethod $config.TokenUrl -Method 'POST' -Headers $tokenHeaders -Body $body -Verbose:$false
         Write-Output $response.access_token
-    }
-    catch {
+    } catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
+
 function Set-AuthorizationHeaders {
     [CmdletBinding()]
     param (
@@ -73,7 +70,8 @@ function Set-AuthorizationHeaders {
     )
     try {
         $headers = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
-        $headers.Add('Accept', 'application/json; charset=utf-8')
+        #$headers.Add('Accept', 'application/json; charset=utf-8')
+        $headers.Add('Content-Type', 'application/json')
         $headers.Add('Authorization', "Bearer $token")
 
         Write-Output $headers

@@ -70,21 +70,19 @@ function Get-AccessToken {
         $tokenHeaders = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
         $tokenHeaders.Add('Content-Type', 'application/x-www-form-urlencoded')
         $body = @{
-            grant_type        = 'urn:ietf:params:oauth:grant-type:token-exchange'
-            client_id         = $config.ClientId
-            client_secret     = $config.ClientSecret
-            organisationId    = $config.OrganisationId
-            environment       = $config.Environment
-            audience          = $config.Audience
-            requested_subject = $config.RequestedSubject
+            grant_type     = 'client_credentials'#'urn:ietf:params:oauth:grant-type:token-exchange'
+            client_id      = $config.ClientId
+            client_secret  = $config.ClientSecret
+            organisationId = $config.OrganisationId
+            environment    = $config.Environment
         }
         $response = Invoke-RestMethod $config.TokenUrl -Method 'POST' -Headers $tokenHeaders -Body $body -Verbose:$false
         Write-Output $response.access_token
-    }
-    catch {
+    } catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
+
 function Set-AuthorizationHeaders {
     [CmdletBinding()]
     param (
@@ -93,8 +91,8 @@ function Set-AuthorizationHeaders {
     )
     try {
         $headers = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
-        $headers.Add('Accept', 'application/json; charset=utf-8')
-        $headers.Add('Content-Type', 'application/json; charset=utf-8')
+        #$headers.Add('Accept', 'application/json; charset=utf-8')
+        $headers.Add('Content-Type', 'application/json')
         $headers.Add('Authorization', "Bearer $token")
 
         Write-Output $headers
@@ -131,21 +129,21 @@ try {
             if ($dryRun -eq $true) {
                 Write-Warning "[DryRun] Revoke Fierit-ECD Team entitlement: [$($pRef.name)] from: [$($p.DisplayName)] will be executed during enforcement"
             }
-        
+
             if (-not($dryRun -eq $true)) {
                 switch ($userFound) {
                     'Found' {
                         Write-Verbose "Revoking Fierit-ECD Team entitlement: [$($pRef.name)] for employee: [$($employee.EmployeeId)]"
-            
+
                         $removeTeam = [PSCustomObject]@{
                             id = $pRef.id
                         }
-                
+
                         if ($user[0].team.id -Contains $removeTeam.id) {
                             $user[0].team = [array]($user[0].team | Where-Object { $_.id –ne $removeTeam.id })
-                            
+
                             if ($null -eq $user[0].team) {
-                                $user[0].PSObject.Properties.Remove('team')
+                               $null =  $user[0].PSObject.Properties.Remove('team')
                             }
 
                             $splatRequestUpdateUser = @{

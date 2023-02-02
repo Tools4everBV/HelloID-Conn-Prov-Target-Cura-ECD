@@ -8,8 +8,11 @@ $config = $configuration | ConvertFrom-Json
 $p = $person | ConvertFrom-Json
 $aRef = $AccountReference | ConvertFrom-Json
 $pRef = $permissionReference | ConvertFrom-Json
+$eRef = $entitlementContext | ConvertFrom-Json
+
 $success = $false
 $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
+$auditLogsWarning = [System.Collections.Generic.List[PSCustomObject]]::new()
 $subPermissions = [System.Collections.Generic.List[PSCustomObject]]::new()
 # Connector Configuration for pointing to the Fierit Custom Contract Property
 $contractCustomProperty = { $_.Custom.FieritECDEmploymentIdentifier }
@@ -43,8 +46,7 @@ function Resolve-HTTPError {
             if ($null -eq $ErrorObject.Exception.Response) {
                 $httpErrorObj.ErrorDetails = $ErrorObject.Exception.Message
                 $httpErrorObj.FriendlyMessage = $ErrorObject.Exception.Message
-            }
-            else {
+            } else {
                 $streamReaderResponse = [System.IO.StreamReader]::new($ErrorObject.Exception.Response.GetResponseStream()).ReadToEnd()
                 $httpErrorObj.ErrorDetails = "$($ErrorObject.Exception.Message) $streamReaderResponse"
                 if ($null -ne $streamReaderResponse) {
@@ -57,8 +59,7 @@ function Resolve-HTTPError {
                     }
                 }
             }
-        }
-        else {
+        } else {
             $httpErrorObj.ErrorDetails = $ErrorObject.Exception.Message
             $httpErrorObj.FriendlyMessage = $ErrorObject.Exception.Message
         }
@@ -73,18 +74,15 @@ function Get-AccessToken {
         $tokenHeaders = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
         $tokenHeaders.Add('Content-Type', 'application/x-www-form-urlencoded')
         $body = @{
-            grant_type        = 'urn:ietf:params:oauth:grant-type:token-exchange'
-            client_id         = $config.ClientId
-            client_secret     = $config.ClientSecret
-            organisationId    = $config.OrganisationId
-            environment       = $config.Environment
-            audience          = $config.Audience
-            requested_subject = $config.RequestedSubject
+            grant_type     = 'client_credentials'#'urn:ietf:params:oauth:grant-type:token-exchange'
+            client_id      = $config.ClientId
+            client_secret  = $config.ClientSecret
+            organisationId = $config.OrganisationId
+            environment    = $config.Environment
         }
         $response = Invoke-RestMethod $config.TokenUrl -Method 'POST' -Headers $tokenHeaders -Body $body -Verbose:$false
         Write-Output $response.access_token
-    }
-    catch {
+    } catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
@@ -97,12 +95,68 @@ function Set-AuthorizationHeaders {
     )
     try {
         $headers = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
-        $headers.Add('Accept', 'application/json; charset=utf-8')
-        $headers.Add('Content-Type', 'application/json; charset=utf-8')
+        #$headers.Add('Accept', 'application/json; charset=utf-8')
+        $headers.Add('Content-Type', 'application/json')
         $headers.Add('Authorization', "Bearer $token")
+
         Write-Output $headers
+    } catch {
+        $PSCmdlet.ThrowTerminatingError($_)
     }
-    catch {
+}
+
+function Compare-Join {
+    [OutputType([array], [array], [array])] # $Left , $Right, $common
+    param(
+        [parameter()]
+        [string[]]$ReferenceObject,
+
+        [parameter()]
+        [string[]]$DifferenceObject
+    )
+    if ($null -eq $DifferenceObject) {
+        $Left = $ReferenceObject
+    } elseif ($null -eq $ReferenceObject ) {
+        $right = $DifferenceObject
+    } else {
+        $left = [string[]][Linq.Enumerable]::Except($ReferenceObject, $DifferenceObject)
+        $right = [string[]][Linq.Enumerable]::Except($DifferenceObject, $ReferenceObject)
+        $common = [string[]][Linq.Enumerable]::Intersect($ReferenceObject, $DifferenceObject)
+    }
+    Write-Output $Left.Where({ -not [string]::IsNullOrEmpty($_) }) , $Right, $common
+}
+
+function Confirm-BusinessRulesInputData {
+    [cmdletbinding()]
+    param(
+        [parameter(Mandatory)]
+        $Contracts,
+
+        [parameter(Mandatory)]
+        $ContractReferenceProperty,
+
+
+        [parameter()]
+        $AccountReferences,
+
+
+        [parameter()]
+        $AccountReferencesReferenceProperty,
+
+        [parameter()]
+        [switch]
+        $InConditions
+
+    )
+    try {
+        if ($null -eq $AccountReferences) {
+            throw  "No account Reference found. Shouldn't happen"
+        }
+        $desiredEmploymentList = ($Contracts | Select-Object -Property  *, $ContractReferenceProperty   | Where-Object { $_.Context.InConditions -eq $InConditions })
+
+        Compare-Join -ReferenceObject $AccountReferences.$AccountReferencesReferenceProperty -DifferenceObject $desiredEmploymentList.$ContractReferenceProperty
+
+    } catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
@@ -112,66 +166,129 @@ try {
     $token = Get-AccessToken
     $headers = Set-AuthorizationHeaders -Token $token
 
+    # Generate Audit logging which checks for incorrect BusinessRules Configuration
+    $splatCofirm = @{
+        Contracts                          = $p.Contracts
+        ContractReferenceProperty          = $contractCustomProperty
+        AccountReferences                  = $aRef
+        AccountReferencesReferenceProperty = 'EmployeeId'
+        InConditions                       = $true
+    }
+
+    $aRefNotInScope , $aRefNotFound, $aRefFound = Confirm-BusinessRulesInputData @splatCofirm
+
+    if ($aRefNotFound) {
+        $auditLogsWarning.Add([PSCustomObject]@{
+                Message = "[Warning] Fierit-ECD Teams entitlement [$($pRef.Name)] cannot be granted for account(s) [$( $aRefNotFound -join ', ')], Due to a missing dependency: No HelloId Account reference found. (See Readme)"
+                IsError = $true
+            })
+    }
+
+
     foreach ($employee in $aRef) {
         try {
+            $action = 'grant'
+
             [array]$contractsinScope = ($p.contracts | Select-Object -Property  *, $contractCustomProperty ) | Where-Object  $contractCustomProperty -eq $employee.EmployeeId | Where-Object { $_.Context.InConditions -eq $true }
             if ($contractsinScope.length -eq 0) {
-                Write-Verbose -Verbose "Account reference: [$($employee.EmployeeId)] not in in scope. It will be skipped."
-                continue
+                # account out of scope
+                if ($employee.EmployeeId -notin $eRef.CurrentPermissions.Reference.UserExternalId ) {
+                    Write-Verbose "Account Reference [$($employee.EmployeeId)] not in Conditions. It will be Skipped.."
+                    $action = 'skip'
+                    continue
+                } else {
+                    $action = 'revoke'
+                }
             }
+
             $splatRequestUser = @{
                 Uri     = "$($config.BaseUrl.Trim('/'))/employees/employee?employeecode=$($employee.EmployeeId)"
                 Method  = 'GET'
                 Headers = $headers
             }
-            Write-Verbose "Getting employee with code [$($employee.UserId)]"
+
+            Write-Verbose "Getting employee with code [$($employee.EmployeeId)]"
             $user = Invoke-RestMethod @splatRequestUser -UseBasicParsing -Verbose:$false
 
             if ($dryRun -eq $true) {
-                Write-Warning "[DryRun] Grant Fierit-ECD Team entitlement: [$($pRef.name)] to: [$($p.DisplayName)] will be executed during enforcement"
+                Write-Warning "[DryRun] $action Fierit-ECD Team entitlement: [$($pRef.name)] to: [$($p.DisplayName)] will be executed during enforcement"
             }
-        
+
             if (-not($dryRun -eq $true)) {
-                Write-Verbose "Granting Fierit-ECD Team entitlement: [$($pRef.name)] for employee: [$($employee.EmployeeId)]"
-                $newTeam = [PSCustomObject]@{
-                    id        = $pRef.id
-                    startdate = (Get-Date -f "yyyy-MM-dd")
-                }
+                switch ($action ) {
+                    'grant' {
+                        Write-Verbose "Granting Fierit-ECD Team entitlement: [$($pRef.name)] for employee: [$($employee.EmployeeId)]"
+                        $newTeam = [PSCustomObject]@{
+                            id        = $pRef.id
+                            startdate = (Get-Date -f "yyyy-MM-dd")
+                        }
 
-                if (![bool]($user[0].PSobject.Properties.name -match "team")) {
-                    $user[0] | Add-Member -NotePropertyName team -NotePropertyValue $null
-                }
-    
-                if ($null -eq $user[0].team -Or -not($user[0].team.id -Contains $newTeam.id )) {
-                    $user[0].team += $newTeam
-                
-                    $splatRequestUpdateUser = @{
-                        Uri     = "$($config.BaseUrl.Trim('/'))/employees/employee"
-                        Method  = 'PATCH'
-                        Headers = $headers
-                        Body    = ($user[0] | ConvertTo-Json -Depth 10)
-                    }
-                    $null = Invoke-RestMethod @splatRequestUpdateUser -UseBasicParsing -Verbose:$false
+                        if (![bool]($user[0].PSobject.Properties.name -match "team")) {
+                            $user[0] | Add-Member -NotePropertyName team -NotePropertyValue $null
+                        }
 
-                    $auditLogs.Add([PSCustomObject]@{
-                        Message = "Employee: [$($employee.EmployeeId)], Grant Fierit-ECD Team entitlement: [$($pRef.name)] was successful"
-                        IsError = $false
-                    })
-                }
-                else {
-                    $auditLogs.Add([PSCustomObject]@{
-                            Message = "Employee: [$($employee.EmployeeId)] Grant Fierit-ECD team entitlement: [$($pRef.name)]. Already present"
-                            IsError = $false
-                        })
-                }
-                $subPermissions.Add(
-                    [PSCustomObject]@{
-                        DisplayName = "[$($employee.EmployeeId)][$($pRef.Name)]"
+                        if ($null -eq $user[0].team -Or -not($user[0].team.id -Contains $newTeam.id )) {
+                            $user[0].team += $newTeam
+
+                            $splatRequestUpdateUser = @{
+                                Uri     = "$($config.BaseUrl.Trim('/'))/employees/employee"
+                                Method  = 'PATCH'
+                                Headers = $headers
+                                Body    = ($user[0] | ConvertTo-Json -Depth 10)
+                            }
+                            $null = Invoke-RestMethod @splatRequestUpdateUser -UseBasicParsing -Verbose:$false
+
+                            $auditLogs.Add([PSCustomObject]@{
+                                    Message = "Employee: [$($employee.EmployeeId)], Grant Fierit-ECD Team entitlement: [$($pRef.name)] was successful"
+                                    IsError = $false
+                                })
+                        } else {
+                            $auditLogs.Add([PSCustomObject]@{
+                                    Message = "Employee: [$($employee.EmployeeId)] Grant Fierit-ECD team entitlement: [$($pRef.name)]. Already present"
+                                    IsError = $false
+                                })
+                        }
+                        $subPermissions.Add(
+                            [PSCustomObject]@{
+                                DisplayName = "[$($employee.EmployeeId)][$($pRef.Name)]"
+                                Reference   = [PSCustomObject]@{
+
+                                    Id             = "[$($employee.EmployeeId)][$($pRef.Name)]"
+                                    UserExternalId = "$($employee.EmployeeId)"
+                                }
+                            }
+                        )
                     }
-                )
+                    'Revoke' {
+                        if ($user[0].team.id -Contains $pRef.id) {
+                            $user[0].team = [array]($user[0].team | Where-Object { $_.id -ne $pRef.id })
+                            if ($null -eq $user[0].team) {
+                                $null = $user[0].PSObject.Properties.Remove('team')
+                            }
+
+                            $splatRequestUpdateUser = @{
+                                Uri     = "$($config.BaseUrl.Trim('/'))/employees/employee"
+                                Method  = 'PATCH'
+                                Headers = $headers
+                                Body    = ($user[0] | ConvertTo-Json -Depth 10)
+                            }
+                            $null = Invoke-RestMethod @splatRequestUpdateUser -UseBasicParsing -Verbose:$false
+
+                            $auditLogs.Add([PSCustomObject]@{
+                                    Message = "Employee: [$($employee.EmployeeId)], Revoke Fierit-ECD Team entitlement: [$($pRef.name)] was successful"
+                                    IsError = $false
+                                })
+
+                        } else {
+                            $auditLogs.Add([PSCustomObject]@{
+                                    Message = "Employee: [$($employee.EmployeeId)], Revoke Fierit-ECD Team entitlement: [$($pRef.name)] Already removed."
+                                    IsError = $false
+                                })
+                        }
+                    }
+                }
             }
-        }
-        catch {
+        } catch {
             $ex = $PSItem
             $errorObj = Resolve-HTTPError -ErrorObject $ex
             Write-Verbose "[$($employee.EmployeeId)] Could not Grant Fierit-ECD Team entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
@@ -184,8 +301,8 @@ try {
     if (-not ($auditLogs.isError -contains $true)) {
         $success = $true
     }
-}
-catch {
+    $auditLogs.AddRange($auditLogsWarning)
+} catch {
     $ex = $PSItem
     $errorObj = Resolve-HTTPError -ErrorObject $ex
     Write-Verbose "Could not Grant Fierit-ECD Team entitlement. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
@@ -194,8 +311,17 @@ catch {
 
             IsError = $true
         })
-}
-finally {
+} finally {
+    # With a successful result. HelloId require always Subpermissions.
+    if ( $subPermissions.count -eq 0 -and $success -eq $true) {
+        $subPermissions.Add(
+            [PSCustomObject]@{
+                DisplayName = 'No Permissions'
+                Reference   = [PSCustomObject]@{
+                    id = 'No Permissions'
+                }
+            })
+    }
     $result = [PSCustomObject]@{
         Success        = $success
         Auditlogs      = $auditLogs

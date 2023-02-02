@@ -20,18 +20,16 @@ function Get-AccessToken {
     [CmdletBinding()]
     param ()
     try {
-        $headers = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
-        $headers.Add('Content-Type', 'application/x-www-form-urlencoded')
+        $tokenHeaders = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
+        $tokenHeaders.Add('Content-Type', 'application/x-www-form-urlencoded')
         $body = @{
-            grant_type        = 'urn:ietf:params:oauth:grant-type:token-exchange'
-            client_id         = $config.ClientId
-            client_secret     = $config.ClientSecret
-            organisationId    = $config.OrganisationId
-            environment       = $config.Environment
-            audience          = $config.Audience
-            requested_subject = $config.RequestedSubject
+            grant_type     = 'client_credentials'#'urn:ietf:params:oauth:grant-type:token-exchange'
+            client_id      = $config.ClientId
+            client_secret  = $config.ClientSecret
+            organisationId = $config.OrganisationId
+            environment    = $config.Environment
         }
-        $response = Invoke-RestMethod $config.TokenUrl -Method 'POST' -Headers $headers -Body $body -Verbose:$false
+        $response = Invoke-RestMethod $config.TokenUrl -Method 'POST' -Headers $tokenHeaders -Body $body -Verbose:$false
         Write-Output $response.access_token
     } catch {
         $PSCmdlet.ThrowTerminatingError($_)
@@ -83,8 +81,8 @@ try {
     Write-Verbose 'Setting authorization header'
     $accessToken = Get-AccessToken
     $headers = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
-    $headers.Add('Accept', 'application/json; charset=utf-8')
-    $headers.Add('Content-Type', 'application/json; charset=utf-8')
+    #$headers.Add('Accept', 'application/json; charset=utf-8')
+    $headers.Add('Content-Type', 'application/json')
     $headers.Add('Authorization', "Bearer $accessToken")
 
     Write-Verbose 'Retrieving all location authorisation groups'

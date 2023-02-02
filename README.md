@@ -9,6 +9,9 @@
 |:---------------------------|
 | This repository contains the connector and configuration code only. The implementer is responsible to acquire the connection details such as username, password, certificate, etc. You might even need to sign a contract or agreement with the supplier before implementing this connector. Please contact the client's application manager to coordinate the connector requirements. |
 
+> :warning: **_Information_**
+> It is important to note that the processing order of this connector may work slightly differently from other connectors in the HelloID platform. This is because this connector supports multiple accounts per HelloID Person. *(See Remark: [Business Rules Validation Check](#business-rules-validation-check) and [Processing Multiple Accounts Fierit](#processing-multiple-accounts-fierit)*
+
 <p align="center">
   <img src="https://tenzinger.com/wp-content/uploads/2021/06/Tenzinger_600x600.jpg"
    alt="drawing" style="width:300px;"/>
@@ -16,22 +19,31 @@
 
 ## Table of contents
 
-- [Table of contents](#Table-of-contents)
-- [Introduction](#Introduction)
-- [Getting started](#Getting-started)
-  + [Connection settings](#Connection-settings)
-  + [Prerequisites](#Prerequisites)
-- [Provisioning](#Provisioning)
-  + [Supported Features](#Supported-Features)
-  + [Supported Action Details](#Supported-Action-Details)
-  + [Remarks](#Remarks)
-- [Setup the connector](@Setup-The-Connector)
-- [Getting help](#Getting-help)
-- [HelloID Docs](#HelloID-docs)
+- [HelloID-Conn-Prov-Target-Fierit-ECD](#helloid-conn-prov-target-fierit-ecd)
+  - [Table of contents](#table-of-contents)
+  - [Introduction](#introduction)
+  - [Getting started](#getting-started)
+    - [Connection settings](#connection-settings)
+    - [Prerequisites](#prerequisites)
+      - [Creation / correlation process](#creation--correlation-process)
+  - [Provisioning](#provisioning)
+    - [Supported Features](#supported-features)
+        - [Supported Action Details](#supported-action-details)
+    - [Remarks](#remarks)
+      - [Business Rules Validation Check](#business-rules-validation-check)
+      - [Processing Multiple Accounts Fierit](#processing-multiple-accounts-fierit)
+  - [Setup the connector](#setup-the-connector)
+    - [Configuration settings](#configuration-settings)
+      - [Script Settings](#script-settings)
+        - [Create.ps1](#createps1)
+        - [Update.ps1](#updateps1)
+        - [All Permissions Scripts *(Grant)*](#all-permissions-scripts-grant)
+  - [Getting help](#getting-help)
+  - [HelloID docs](#helloid-docs)
 
 ## Introduction
 
-_HelloID-Conn-Prov-Target-Fierit-ECD_ is a _target_ connector. Fierit-ECD, formerly known as Cura-ECD, provides a set of REST APIs that allow you to programmatically interact with its data. The connector manages the Fierit Employee, User account, Employee Teams, User LocationAuthorisationGroups, and User Roles with or without selectionAuthorisationGroup. The Employees and Account are both supported in the account LifeCycle, and there are three types of permissions to manage the authorizations. It supports multiple accounts for a HelloId Person based on Employment.
+_HelloID-Conn-Prov-Target-Fierit-ECD_ is a _target_ connector. Fierit-ECD, formerly known as CURA-ECD, provides a set of REST APIs that allow you to programmatically interact with its data. The connector manages the Fierit Employee, User account, Employee Teams, User LocationAuthorisationGroups, and User Roles with or without selectionAuthorisationGroup. The Employees and Account are both supported in the account LifeCycle, and there are three types of permissions to manage the authorizations. It supports multiple accounts for a HelloId Person based on Employment.
 
 
 ## Getting started
@@ -59,8 +71,8 @@ The following settings are required to connect to the API.
 ### Prerequisites
  - IP Address is whitelisted (local Agent)
  - Connection Settings
- - A additional mapping between HR departments and/or Titles to SelectionAuthorisationGroup to assign a "Scope" on a Role
-- An custom property on the HelloID contract with a combination of the employeeCode and EmploymentCode named: [custom.FieritECDEmploymentIdentifier]
+ - An additional mapping between HR departments and/or Titles to SelectionAuthorisationGroup to assign a "Scope" on a Role
+- A custom property on the HelloID contract with a combination of the employeeCode and EmploymentCode named: [custom.FieritECDEmploymentIdentifier]
 Example:
 ```JavaScript
   function getValue() {
@@ -70,7 +82,7 @@ Example:
   ```
 
 #### Creation / correlation process
-A new functionality is the possibility to update the account in the target system during the correlation process. By default, this behavior is disabled. Meaning, the account will only be created or correlated.
+New functionality is the possibility to update the account in the target system during the correlation process. By default, this behavior is disabled. Meaning, the account will only be created or correlated.
 You can change this behavior in the `create.ps1` by setting the boolean `$updatePerson` to the value of `$true`.
 
 > Be aware that this might have unexpected implications.
@@ -107,9 +119,19 @@ Using this connector you will have the ability to create and manage the followin
 
 ### Remarks
 - The web service is only Accessible with whitelisted IP addresses. So an Agent server is required. *Not sure if Fierit supports DNS whitelisting*
-- The web service does not support Patch requests. So the user is retrieved from Fierit, adds the new permission, and the user is updated with the current permission and newly permission. Therefore, concurrent sessions must be set to 1.
+- The web service does not support Patch requests. So the user is retrieved from Fierit, adds the new permission, and the user is updated with the current permission and new permission. Therefore, concurrent sessions must be set to 1.
  - A dummy or Default Role for creating new users. It's required to set a role when creating a new User. Because they take place in the account lifecycle the first role cannot be managed through entitlements.
- - Because the Connector Support multiplies account per Persons, the permission Update script must also be used. You can place the Grant script here since this works in both situations.
+ - Because the Connector Support multiplies account per Person, the permission Update script must also be used. You can place the Grant script here since this works in both situations.
+
+#### Business Rules Validation Check
+
+In certain situations, an employment with the reference number 1000467-1 may have an account entitlement, while another employment with the reference number 1000467-2 has been granted permission. This leads to a mismatch between the account reference and the contracts in scope. This mismatch is a result of an incorrect configuration of the Business Rules. The connector checks for this mismatch and will generate a "warning" audit log, but the connector will still complete successfully without processing the permission. It is important to ensure that by granting permissions to specific employment, they also have an associated account entitlement.
+
+#### Processing Multiple Accounts Fierit
+
+Due to the support for multiple accounts within Fierit, the Update task may result in the removal of an account. This scenario presents a problem, as the default process order for revoking a trigger is to first revoke the permissions and then revoke the account entitlement. As a result, permissions are revoked before the account entitlement is outside of scope. This process is described in the HelloID documentation. However, in our particular scenario, the process operates differently. The update task first removes the account, resulting in the process order being reversed, with the account revocation occurring before the permission is revoked. This difference in process order leads to the removed account reference not appearing in the permission task, making it impossible to remove the associated permissions. The difference in processing orders forces the removal of all the permission during the removal in the Update.ps1. The permission script subsequently performs a cleanup process of the previously removed accounts (Remove the deprecated sub-permissions) during the next run. However, this is not a straightforward process and will only be triggered during the next specific permission update or when manually prompted to update the permissions.
+
+> :bulb: Tip: To get a closing solution, you can specify the account and permission entitlements in distinct business rules. Additionally, it is suggested to configure the permission entitlement to be out of scope before the account entitlement during off-boarding or re-boarding procedures... To prevent out-of-sync permissions.
 
 
 ## Setup the connector
