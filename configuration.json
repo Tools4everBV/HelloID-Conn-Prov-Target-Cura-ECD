@@ -40,16 +40,6 @@
         }
     },
     {
-        "key": "Audience",
-        "type": "input",
-        "defaultValue": "tools4ever-test",
-        "templateOptions": {
-            "label": "Audience",
-            "description": "The Audience to connect to the API",
-            "required": true
-        }
-    },
-    {
         "key": "BaseUrl",
         "type": "input",
         "defaultValue": "",
@@ -68,16 +58,6 @@
             "placeholder": "https://<ServerAddress>/fierit/api/token/<Environment>",
             "label": "TokenURL",
             "description": "The URL to get the API Token.",
-            "required": true
-        }
-    },
-    {
-        "key": "RequestedSubject",
-        "type": "input",
-        "defaultValue": "",
-        "templateOptions": {
-            "label": "Requested Subject",
-            "description": "The requested subject (email) to get the API Token.",
             "required": true
         }
     },

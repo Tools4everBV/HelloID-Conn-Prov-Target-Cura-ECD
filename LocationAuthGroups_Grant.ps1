@@ -8,8 +8,10 @@ $config = $configuration | ConvertFrom-Json
 $p = $person | ConvertFrom-Json
 $aRef = $AccountReference | ConvertFrom-Json
 $pRef = $permissionReference | ConvertFrom-Json
+$eRef = $entitlementContext | ConvertFrom-Json
 $success = $false
 $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
+$auditLogsWarning = [System.Collections.Generic.List[PSCustomObject]]::new()
 $subPermissions = [System.Collections.Generic.List[PSCustomObject]]::new()
 
 # Connector Configuration for pointing to the Fierit Custom Contract Property
@@ -28,18 +30,16 @@ function Get-AccessToken {
     [CmdletBinding()]
     param ()
     try {
-        $headers = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
-        $headers.Add('Content-Type', 'application/x-www-form-urlencoded')
+        $tokenHeaders = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
+        $tokenHeaders.Add('Content-Type', 'application/x-www-form-urlencoded')
         $body = @{
-            grant_type        = 'urn:ietf:params:oauth:grant-type:token-exchange'
-            client_id         = $config.ClientId
-            client_secret     = $config.ClientSecret
-            organisationId    = $config.OrganisationId
-            environment       = $config.Environment
-            audience          = $config.Audience
-            requested_subject = $config.RequestedSubject
+            grant_type     = 'client_credentials'#'urn:ietf:params:oauth:grant-type:token-exchange'
+            client_id      = $config.ClientId
+            client_secret  = $config.ClientSecret
+            organisationId = $config.OrganisationId
+            environment    = $config.Environment
         }
-        $response = Invoke-RestMethod $config.TokenUrl -Method 'POST' -Headers $headers -Body $body -Verbose:$false
+        $response = Invoke-RestMethod $config.TokenUrl -Method 'POST' -Headers $tokenHeaders -Body $body -Verbose:$false
         Write-Output $response.access_token
     } catch {
         $PSCmdlet.ThrowTerminatingError($_)
@@ -85,22 +85,105 @@ function Resolve-HTTPError {
         Write-Output $httpErrorObj
     }
 }
+
+function Compare-Join {
+    [OutputType([array], [array], [array])] # $Left , $Right, $common
+    param(
+        [parameter()]
+        [string[]]$ReferenceObject,
+
+        [parameter()]
+        [string[]]$DifferenceObject
+    )
+    if ($null -eq $DifferenceObject) {
+        $Left = $ReferenceObject
+    } elseif ($null -eq $ReferenceObject ) {
+        $right = $DifferenceObject
+    } else {
+        $left = [string[]][Linq.Enumerable]::Except($ReferenceObject, $DifferenceObject)
+        $right = [string[]][Linq.Enumerable]::Except($DifferenceObject, $ReferenceObject)
+        $common = [string[]][Linq.Enumerable]::Intersect($ReferenceObject, $DifferenceObject)
+    }
+    Write-Output $Left.Where({ -not [string]::IsNullOrEmpty($_) }) , $Right, $common
+}
+
+function Confirm-BusinessRulesInputData {
+    [cmdletbinding()]
+    param(
+        [parameter(Mandatory)]
+        $Contracts,
+
+        [parameter(Mandatory)]
+        $ContractReferenceProperty,
+
+
+        [parameter()]
+        $AccountReferences,
+
+
+        [parameter()]
+        $AccountReferencesReferenceProperty,
+
+        [parameter()]
+        [switch]
+        $InConditions
+
+    )
+    try {
+        if ($null -eq $AccountReferences) {
+            throw  "No account Reference found. Shouldn't happen"
+        }
+        $desiredEmploymentList = ($Contracts | Select-Object -Property  *, $ContractReferenceProperty   | Where-Object { $_.Context.InConditions -eq $InConditions })
+
+        Compare-Join -ReferenceObject $AccountReferences.$AccountReferencesReferenceProperty -DifferenceObject $desiredEmploymentList.$ContractReferenceProperty
+
+    } catch {
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
+
 #endregion
 
 try {
     Write-Verbose 'Setting authorization header'
     $accessToken = Get-AccessToken
     $headers = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
-    $headers.Add('Accept', 'application/json; charset=utf-8')
-    $headers.Add('Content-Type', 'application/json; charset=utf-8')
+    #$headers.Add('Accept', 'application/json; charset=utf-8')
+    $headers.Add('Content-Type', 'application/json')
     $headers.Add('Authorization', "Bearer $accessToken")
+
+
+    # Generate Audit logging which checks for incorrect BusinessRules Configuration
+    $splatCofirm = @{
+        Contracts                          = $p.Contracts
+        ContractReferenceProperty          = $contractCustomProperty
+        AccountReferences                  = $aRef
+        AccountReferencesReferenceProperty = 'EmployeeId'
+        InConditions                       = $true
+    }
+
+    $aRefNotInScope , $aRefNotFound, $aRefFound = Confirm-BusinessRulesInputData @splatCofirm
+
+    if ($aRefNotFound) {
+        $auditLogsWarning.Add([PSCustomObject]@{
+                Message = "[Warning] Fierit-ECD locationAuthGroup entitlement [$($pRef.Name)] cannot be granted for account(s) [$( $aRefNotFound -join ', ')], Due to a missing dependency: No HelloId Account reference found. (See Readme)"
+                IsError = $true
+            })
+    }
 
     foreach ($employment in $aRef) {
         try {
+            $action = 'grant'
             [array]$contractsinScope = ($p.contracts | Select-Object -Property  *, $contractCustomProperty ) | Where-Object  $contractCustomProperty -eq $employment.EmployeeId | Where-Object { $_.Context.InConditions -eq $true }
             if ($contractsinScope.length -eq 0) {
-                Write-Verbose "Account Reference [$($employment.EmployeeId)] not in Conditions. It will be Skipped.."
-                continue
+                # account out of scope
+                if ($employment.userid -notin $eRef.CurrentPermissions.Reference.UserExternalId) {
+                    Write-Verbose "Account Reference [$($employment.EmployeeId)] not in Conditions. It will be Skipped.."
+                    $action = 'skip'
+                    continue
+                } else {
+                    $action = 'revoke'
+                }
             }
 
             Write-Verbose "Getting user with usercode [$($employment.UserId)]"
@@ -113,55 +196,90 @@ try {
             if ($responseUser.Length -eq 0) {
                 throw "A user with usercode [$($employment.UserId)] could not be found"
             }
+            $existingUser = $responseUser[0]
+
+            $desiredLocationAuthGroups = [System.Collections.Generic.List[object]]::new()
+            if ($existingUser.locationauthorisationgroup.Length -gt 0) {
+                Write-Verbose 'Adding currently assigned locationAuthGroups'
+                $desiredLocationAuthGroups.AddRange($existingUser.locationauthorisationgroup)
+            }
+
 
             # Add an auditMessage showing what will happen during enforcement
             if ($dryRun -eq $true) {
-                Write-Warning "[DryRun] Grant Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)] to: [$($p.DisplayName)] will be executed during enforcement"
+                Write-Warning "[DryRun] $action Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)] to: [$($p.DisplayName)] will be executed during enforcement"
             }
 
             if (-not($dryRun -eq $true)) {
-                Write-Verbose "Granting Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)]"
-                $desiredLocationAuthGroups = [System.Collections.Generic.List[object]]::new()
-                if ($responseUser[0].locationauthorisationgroup.Length -gt 0) {
-                    Write-Verbose 'Adding currently assigned locationAuthGroups'
-                    $desiredLocationAuthGroups.AddRange($responseUser[0].locationauthorisationgroup)
-                }
-                Write-Verbose 'Adding new locationAuthGroup to the list'
-                $newLocationAuthGroup = @{
-                    code = $pRef.Code
-                }
+                switch ($action ) {
+                    'grant' {
+                        Write-Verbose "Granting Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)]"
+                        if ($desiredLocationAuthGroups.code -contains $pRef.code) {
+                            $auditLogs.Add([PSCustomObject]@{
+                                    Message = "[$($employment.UserId)] Grant Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)]. Already present"
+                                    IsError = $false
+                                })
+                        } else {
+                            Write-Verbose 'Adding new locationAuthGroup to the list'
+                            if (-not  [bool]($existingUser.PSobject.Properties.Name -match 'locationauthorisationgroup')) {
+                                $existingUser | Add-Member -NotePropertyMembers @{
+                                    locationauthorisationgroup = $null
+                                }
+                            }
+                            $newLocationAuthGroup = @{
+                                code = $pRef.Code
+                            }
+                            $desiredLocationAuthGroups.Add($newLocationAuthGroup)
 
-                if ($desiredLocationAuthGroups.code -contains $newLocationAuthGroup.code) {
-                    $auditLogs.Add([PSCustomObject]@{
-                            Message = "[$($employment.UserId)] Grant Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)]. Already present"
-                            IsError = $false
-                        })
-                } else {
-                    $desiredLocationAuthGroups.Add($newLocationAuthGroup)
-                    if (-not  [bool]($responseUser[0].PSobject.Properties.Name -match 'locationauthorisationgroup')) {
-                        $responseUser[0] | Add-Member -NotePropertyMembers @{
-                            locationauthorisationgroup = $null
+                            $existingUser.locationauthorisationgroup = $desiredLocationAuthGroups
+
+                            $splatPatchUserParams = @{
+                                Uri     = "$($config.BaseUrl)/users/user"
+                                Method  = 'PATCH'
+                                Headers = $headers
+                                Body    = ($existingUser | ConvertTo-Json -Depth 10)
+                            }
+                            $null = Invoke-RestMethod @splatPatchUserParams -UseBasicParsing -Verbose:$false
+                            $auditLogs.Add([PSCustomObject]@{
+                                    Message = "[$($employment.UserId)] Grant Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)] was successful"
+                                    IsError = $false
+                                })
                         }
+                        $subPermissions.Add(
+                            [PSCustomObject]@{
+                                DisplayName = "[$($employment.UserId)] [$($pRef.Name)]"
+                                Reference   = [PSCustomObject]@{
+                                    Id             = "$($employment.UserId)-$($pRef.Name)"
+                                    UserExternalId = "$($employment.UserId)"
+                                }
+                            }
+                        )
                     }
-                    $responseUser[0].locationauthorisationgroup = $desiredLocationAuthGroups
-
-                    $splatPatchUserParams = @{
-                        Uri     = "$($config.BaseUrl)/users/user"
-                        Method  = 'PATCH'
-                        Headers = $headers
-                        Body    = ($responseUser[0] | ConvertTo-Json -Depth 10)
+                    'revoke' {
+                        if (($existingUser.locationauthorisationgroup.Length -eq 0) -or
+                            ($existingUser.locationauthorisationgroup.code -notcontains $pRef.code)) {
+                            $auditMessage = "[$($employment.UserId)] Revoke Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)]. Already removed"
+                        } else {
+                            $null = $desiredLocationAuthGroups.Remove(($desiredLocationAuthGroups | Where-Object { $_.code -eq $pRef.code }))
+                            $existingUser.locationauthorisationgroup = $desiredLocationAuthGroups
+                            if ($existingUser.locationauthorisationgroup.count -eq 0) {
+                                $existingUser.locationauthorisationgroup = $null
+                            }
+                            $splatPatchUserParams = @{
+                                Uri     = "$($config.BaseUrl)/users/user"
+                                Method  = 'PATCH'
+                                Headers = $headers
+                                Body    = ($existingUser | ConvertTo-Json -Depth 10)
+                            }
+                            $null = Invoke-RestMethod @splatPatchUserParams -UseBasicParsing -Verbose:$false
+                            $auditMessage = "[$($employment.UserId)] Revoke Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)] was successful"
+                        }
+                        $auditLogs.Add([PSCustomObject]@{
+                                Message = $auditMessage
+                                IsError = $false
+                            })
                     }
-                    $responseUser = Invoke-RestMethod @splatPatchUserParams -UseBasicParsing -Verbose:$false
-                    $auditLogs.Add([PSCustomObject]@{
-                            Message = "[$($employment.UserId)] Grant Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)] was successful"
-                            IsError = $false
-                        })
                 }
-                $subPermissions.Add(
-                    [PSCustomObject]@{
-                        DisplayName = "[$($employment.UserId)] [$($pRef.Name)]"
-                    }
-                )
             }
         } catch {
             $ex = $PSItem
@@ -177,6 +295,7 @@ try {
     if (-not ($auditLogs.isError -contains $true)) {
         $success = $true
     }
+    $auditLogs.AddRange($auditLogsWarning)
 } catch {
     $ex = $PSItem
     $errorObj = Resolve-HTTPError -ErrorObject $ex
@@ -186,6 +305,17 @@ try {
             IsError = $true
         })
 } finally {
+    # With a successful result. HelloId require always Subpermissions.
+    if ( $subPermissions.count -eq 0 -and $success -eq $true) {
+        $subPermissions.Add(
+            [PSCustomObject]@{
+                DisplayName = 'No Permissions'
+                Reference   = [PSCustomObject]@{
+                    id = 'No Permissions'
+                }
+            })
+    }
+
     $result = [PSCustomObject]@{
         Success        = $success
         Auditlogs      = $auditLogs

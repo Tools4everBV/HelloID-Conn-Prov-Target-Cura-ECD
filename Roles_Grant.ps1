@@ -8,8 +8,10 @@ $config = $configuration | ConvertFrom-Json
 $p = $person | ConvertFrom-Json
 $aRef = $AccountReference | ConvertFrom-Json
 $pRef = $permissionReference | ConvertFrom-Json
+$eRef = $entitlementContext | ConvertFrom-Json
 $success = $false
 $auditLogs = [System.Collections.Generic.List[PSCustomObject]]::new()
+$auditLogsWarning = [System.Collections.Generic.List[PSCustomObject]]::new()
 $subPermissions = [System.Collections.Generic.List[PSCustomObject]]::new()
 
 # Enable TLS1.2
@@ -49,18 +51,16 @@ function Get-AccessToken {
     [CmdletBinding()]
     param ()
     try {
-        $headers = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
-        $headers.Add('Content-Type', 'application/x-www-form-urlencoded')
+        $tokenHeaders = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
+        $tokenHeaders.Add('Content-Type', 'application/x-www-form-urlencoded')
         $body = @{
-            grant_type        = 'urn:ietf:params:oauth:grant-type:token-exchange'
-            client_id         = $config.ClientId
-            client_secret     = $config.ClientSecret
-            organisationId    = $config.OrganisationId
-            environment       = $config.Environment
-            audience          = $config.Audience
-            requested_subject = $config.RequestedSubject
+            grant_type     = 'client_credentials'#'urn:ietf:params:oauth:grant-type:token-exchange'
+            client_id      = $config.ClientId
+            client_secret  = $config.ClientSecret
+            organisationId = $config.OrganisationId
+            environment    = $config.Environment
         }
-        $response = Invoke-RestMethod $config.TokenUrl -Method 'POST' -Headers $headers -Body $body -Verbose:$false
+        $response = Invoke-RestMethod $config.TokenUrl -Method 'POST' -Headers $tokenHeaders -Body $body -Verbose:$false
         Write-Output $response.access_token
     } catch {
         $PSCmdlet.ThrowTerminatingError($_)
@@ -165,6 +165,62 @@ function Get-FieritSAGroupFromHelloIDContract {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
+
+function Compare-Join {
+    [OutputType([array], [array], [array])] # $Left , $Right, $common
+    param(
+        [parameter()]
+        [string[]]$ReferenceObject,
+
+        [parameter()]
+        [string[]]$DifferenceObject
+    )
+    if ($null -eq $DifferenceObject) {
+        $Left = $ReferenceObject
+    } elseif ($null -eq $ReferenceObject ) {
+        $right = $DifferenceObject
+    } else {
+        $left = [string[]][Linq.Enumerable]::Except($ReferenceObject, $DifferenceObject)
+        $right = [string[]][Linq.Enumerable]::Except($DifferenceObject, $ReferenceObject)
+        $common = [string[]][Linq.Enumerable]::Intersect($ReferenceObject, $DifferenceObject)
+    }
+    Write-Output $Left.Where({ -not [string]::IsNullOrEmpty($_) }) , $Right, $common
+}
+
+function Confirm-BusinessRulesInputData {
+    [cmdletbinding()]
+    param(
+        [parameter(Mandatory)]
+        $Contracts,
+
+        [parameter(Mandatory)]
+        $ContractReferenceProperty,
+
+
+        [parameter()]
+        $AccountReferences,
+
+
+        [parameter()]
+        $AccountReferencesReferenceProperty,
+
+        [parameter()]
+        [switch]
+        $InConditions
+
+    )
+    try {
+        if ($null -eq $AccountReferences) {
+            throw  "No account Reference found. Shouldn't happen"
+        }
+        $desiredEmploymentList = ($Contracts | Select-Object -Property  *, $ContractReferenceProperty   | Where-Object { $_.Context.InConditions -eq $InConditions })
+
+        Compare-Join -ReferenceObject $AccountReferences.$AccountReferencesReferenceProperty -DifferenceObject $desiredEmploymentList.$ContractReferenceProperty
+
+    } catch {
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
 #endregion
 
 try {
@@ -187,16 +243,42 @@ try {
     Write-Verbose 'Setting authorization header'
     $accessToken = Get-AccessToken
     $headers = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
-    $headers.Add('Accept', 'application/json; charset=utf-8')
-    $headers.Add('Content-Type', 'application/json; charset=utf-8')
+    #$headers.Add('Accept', 'application/json; charset=utf-8')
+    $headers.Add('Content-Type', 'application/json')
     $headers.Add('Authorization', "Bearer $accessToken")
+
+    # Generate Audit logging which checks for incorrect BusinessRules Configuration
+    $splatCofirm = @{
+        Contracts                          = $p.Contracts
+        ContractReferenceProperty          = $contractCustomProperty
+        AccountReferences                  = $aRef
+        AccountReferencesReferenceProperty = 'EmployeeId'
+        InConditions                       = $true
+    }
+
+    $aRefNotInScope , $aRefNotFound, $aRefFound = Confirm-BusinessRulesInputData @splatCofirm
+
+    if ($aRefNotFound) {
+        $auditLogsWarning.Add([PSCustomObject]@{
+                Message = "[Warning] Fierit-ECD Roles entitlement [$($pRef.Name)] cannot be granted for account(s) [$( $aRefNotFound -join ', ')], Due to a missing dependency: No HelloId Account reference found. (See Readme)"
+                IsError = $true
+            })
+    }
+
 
     foreach ($employment in $aRef) {
         try {
+            $action = 'grant'
             [array]$contractsinScope = ($p.contracts | Select-Object -Property  *, $contractCustomProperty ) | Where-Object  $contractCustomProperty -eq $employment.EmployeeId | Where-Object { $_.Context.InConditions -eq $true }
             if ($contractsinScope.length -eq 0) {
-                Write-Verbose "Account reference [$($employment.EmployeeId)] not in Scope... Skipping."
-                continue
+                # account out of scope
+                if ($employment.userid -notin $eRef.CurrentPermissions.Reference.UserExternalId ) {
+                    Write-Verbose "Account Reference [$($employment.EmployeeId)] not in Conditions. It will be Skipped.."
+                    $action = 'skip'
+                    continue
+                } else {
+                    $action = 'revoke'
+                }
             }
 
             Write-Verbose "Getting user with usercode [$($employment.UserId)]"
@@ -210,103 +292,151 @@ try {
                 throw "A user with usercode [$($employment.userId)] could not be found"
             }
 
-            if ($config.UseMappingSelectionAuthorisationGroup) {
-                Write-Verbose "Calculate primary contract for Employment [$($employment.EmployeeId)]"
-                $primaryContract = $contractsInConditionsGrouped[$employment.EmployeeId] | Sort-Object @splatSortObject  | Select-Object -First 1
-
-                $splat = @{
-                    ContractLookupField1 = $mappingLookupProperty1
-                    ContractLookupField2 = $mappingLookupProperty2
-                    Contract             = $primaryContract
-                    Mapping              = $mappingSelectionAuthGroups
-                    MappingColumnName1   = 'department.id'
-                    MappingColumnName2   = 'title.id'
-                }
-                $mappedSelectionAuthorisationGroupCode = (Get-FieritSAGroupFromHelloIDContract @splat).FieritSelectionAuthorisationGroup
-            }
-
             # Add an auditMessage showing what will happen during enforcement
             if ($dryRun -eq $true) {
                 if ($config.UseMappingSelectionAuthorisationGroup) {
-                    Write-Warning "[DryRun] [$($employment.UserId)] Grant Fierit-ECD role entitlement: [$($pRef.Name) | $mappedSelectionAuthorisationGroupCode] to: [$($p.DisplayName)] will be executed during enforcement"
+                    Write-Warning "[DryRun] [$($employment.UserId)] $action Fierit-ECD role entitlement: [$($pRef.Name) | $mappedSelectionAuthorisationGroupCode] to: [$($p.DisplayName)] will be executed during enforcement"
                 } else {
-                    Write-Warning "[DryRun] [$($employment.UserId)] Grant Fierit-ECD role entitlement: [$($pRef.Name)] to: [$($p.DisplayName)] will be executed during enforcement"
+                    Write-Warning "[DryRun] [$($employment.UserId)] $action Fierit-ECD role entitlement: [$($pRef.Name)] to: [$($p.DisplayName)] will be executed during enforcement"
                 }
             }
 
             if (-not($dryRun -eq $true)) {
-                Write-Verbose "Granting Fierit-ECD role entitlement: [$($pRef.Name)]"
-                $desiredRoles = [System.Collections.Generic.List[object]]::new()
+                switch ($action ) {
+                    'grant' {
+                        Write-Verbose "Granting Fierit-ECD role entitlement: [$($pRef.Name)]"
+                        if ($config.UseMappingSelectionAuthorisationGroup) {
+                            Write-Verbose "Calculate primary contract for Employment [$($employment.EmployeeId)]"
+                            $primaryContract = $contractsInConditionsGrouped[$employment.EmployeeId] | Sort-Object @splatSortObject  | Select-Object -First 1
 
-                if ($responseUser[0].Role.Length -gt 0) {
-                    Write-Verbose 'Adding currently assigned role(s)'
-                    $desiredRoles.AddRange($responseUser[0].Role)
-                }
-
-                # Can be Enabled to remove the default role when present
-                # if ($desiredRoles.id -contains "$($config.DefaultTeamAssignmentGuid)") {
-                #     Write-Verbose "Removing Default Role [$($config.DefaultTeamAssignmentGuid)]"
-                #     $roleToRemove = $desiredRoles | Where-Object { $_.id -eq $($config.DefaultTeamAssignmentGuid) }
-                #     $desiredRoles.Remove($roleToRemove)
-                # }
-
-                Write-Verbose 'Adding new role to the list'
-                $newRole = @{
-                    id        = $pRef.Id
-                    startdate = (Get-Date).ToString('yyyy-MM-dd')
-                    enddate   = $null
-                }
-
-                $existingRole = $null
-                $existingRole = $desiredRoles | Where-Object { $_.id -eq $newRole.id }
-                if ( $null -ne $existingRole -and $config.UseMappingSelectionAuthorisationGroup -eq $false) {
-                    $auditMessage = "Grant Fierit-ECD role entitlement: [$($pRef.Name)]. Already present"
-
-                } elseif (($null -ne $existingRole) -and (($config.UseMappingSelectionAuthorisationGroup -eq $true) -and ($existingRole.selectionauthorisationgroup.code -eq $mappedSelectionAuthorisationGroupCode))) {
-                    $auditMessage = "Grant Fierit-ECD role entitlement: [$($pRef.Name)]. Already present with correct SelectionAuthorisationGroup"
-
-                } else {
-                    if ($config.UseMappingSelectionAuthorisationGroup) {
-                        $null = $desiredRoles.Remove($existingRole)
-
-                        Write-Verbose "Adding SelectionAuthorisationGroup [$mappedSelectionAuthorisationGroupCode] to Role"
-                        $newRole['selectionauthorisationgroup'] = @{
-                            code = $mappedSelectionAuthorisationGroupCode
+                            $splat = @{
+                                ContractLookupField1 = $mappingLookupProperty1
+                                ContractLookupField2 = $mappingLookupProperty2
+                                Contract             = $primaryContract
+                                Mapping              = $mappingSelectionAuthGroups
+                                MappingColumnName1   = 'department.id'
+                                MappingColumnName2   = 'title.id'
+                            }
+                            $mappedSelectionAuthorisationGroupCode = (Get-FieritSAGroupFromHelloIDContract @splat).FieritSelectionAuthorisationGroup
                         }
-                    }
-                    $desiredRoles.Add($newRole)
-                    $responseUser[0].role = $desiredRoles
 
-                    $splatPatchUserParams = @{
-                        Uri     = "$($config.BaseUrl)/users/user"
-                        Method  = 'PATCH'
-                        Headers = $headers
-                        Body    = ($responseUser[0] | ConvertTo-Json -Depth 10)
-                    }
-                    $responseUser = Invoke-RestMethod @splatPatchUserParams -UseBasicParsing -Verbose:$false
 
-                    if ($config.UseMappingSelectionAuthorisationGroup) {
-                        $auditMessage = "Grant Fierit-ECD role entitlement: [$($pRef.Name)] with Selection Group [$mappedSelectionAuthorisationGroupCode] was successful"
-                    } else {
-                        $auditMessage = "Grant Fierit-ECD role entitlement: [$($pRef.Name)] was successful"
+                        $desiredRoles = [System.Collections.Generic.List[object]]::new()
+
+                        if ($responseUser[0].Role.Length -gt 0) {
+                            Write-Verbose 'Adding currently assigned role(s)'
+                            $desiredRoles.AddRange($responseUser[0].Role)
+                        }
+
+                        # Can be Enabled to remove the default role when present
+                        # if ($desiredRoles.id -contains "$($config.DefaultTeamAssignmentGuid)") {
+                        #     Write-Verbose "Removing Default Role [$($config.DefaultTeamAssignmentGuid)]"
+                        #     $roleToRemove = $desiredRoles | Where-Object { $_.id -eq $($config.DefaultTeamAssignmentGuid) }
+                        #     $desiredRoles.Remove($roleToRemove)
+                        # }
+
+                        Write-Verbose 'Adding new role to the list'
+                        $newRole = @{
+                            id        = $pRef.Id
+                            startdate = (Get-Date).ToString('yyyy-MM-dd')
+                            enddate   = $null
+                        }
+
+                        $existingRole = $null
+                        $existingRole = $desiredRoles | Where-Object { $_.id -eq $newRole.id }
+                        if ( $null -ne $existingRole -and $config.UseMappingSelectionAuthorisationGroup -eq $false) {
+                            $auditMessage = "Grant Fierit-ECD role entitlement: [$($pRef.Name)]. Already present"
+
+                        } elseif (($null -ne $existingRole) -and (($config.UseMappingSelectionAuthorisationGroup -eq $true) -and ($existingRole.selectionauthorisationgroup.code -eq $mappedSelectionAuthorisationGroupCode))) {
+                            $auditMessage = "Grant Fierit-ECD role entitlement: [$($pRef.Name)]. Already present with correct SelectionAuthorisationGroup"
+
+                        } else {
+                            if ($config.UseMappingSelectionAuthorisationGroup) {
+                                $null = $desiredRoles.Remove($existingRole)
+
+                                Write-Verbose "Adding SelectionAuthorisationGroup [$mappedSelectionAuthorisationGroupCode] to Role"
+                                $newRole['selectionauthorisationgroup'] = @{
+                                    code = $mappedSelectionAuthorisationGroupCode
+                                }
+                            }
+                            $desiredRoles.Add($newRole)
+                            $responseUser[0].role = $desiredRoles
+
+                            $splatPatchUserParams = @{
+                                Uri     = "$($config.BaseUrl)/users/user"
+                                Method  = 'PATCH'
+                                Headers = $headers
+                                Body    = ($responseUser[0] | ConvertTo-Json -Depth 10)
+                            }
+                            $responseUser = Invoke-RestMethod @splatPatchUserParams -UseBasicParsing -Verbose:$false
+
+                            if ($config.UseMappingSelectionAuthorisationGroup) {
+                                $auditMessage = "Grant Fierit-ECD role entitlement: [$($pRef.Name)] with Selection Group [$mappedSelectionAuthorisationGroupCode] was successful"
+                            } else {
+                                $auditMessage = "Grant Fierit-ECD role entitlement: [$($pRef.Name)] was successful"
+                            }
+                        }
+                        $auditLogs.Add([PSCustomObject]@{
+                                Message = "[$($employment.UserId)] $auditMessage"
+                                IsError = $false
+                            })
+
+                        if ($config.UseMappingSelectionAuthorisationGroup) {
+                            $subPermissionDisplayName = "[$($employment.UserId)] [$($pRef.Name)] [$mappedSelectionAuthorisationGroupCode]"
+                        } else {
+                            $subPermissionDisplayName = "[$($employment.UserId)] [$($pRef.Name)]"
+                        }
+
+                        $subPermissions.Add(
+                            [PSCustomObject]@{
+                                DisplayName = $subPermissionDisplayName
+                                Reference   = [PSCustomObject]@{
+                                    Id             = $subPermissionDisplayName
+                                    UserExternalId = "$($employment.UserId)"
+                                }
+                            }
+                        )
                     }
+                    'revoke' {
+                        if (($responseUser[0].Role.Length -eq 0) -or (($responseUser[0].Role.id -notcontains $pRef.id))) {
+                            $auditMessage = "[$($employment.UserId)] Revoke Fierit-ECD Role entitlement: [$($pRef.Name)]. Already removed"
+                        } else {
+                            Write-Verbose 'Creating list of currently assigned roles'
+                            $currentRoles = [System.Collections.Generic.List[object]]::new()
+                            $currentRoles.AddRange($responseUser[0].Role)
+
+                            Write-Verbose 'Removing role from the list'
+                            $roleToRemove = $currentRoles | Where-Object { $_.id -eq $pRef.id }
+                            [void]$currentRoles.Remove($roleToRemove)
+                            $responseUser[0].role = $currentRoles
+
+                            Write-Verbose 'Adding default Role after revoking last Entitlements'
+                            if ($responseUser[0].role.count -eq 0) {
+                                $responseUser[0].role = @(
+                                    @{
+                                        id        = "$($config.DefaultTeamAssignmentGuid)"
+                                        startdate = (Get-Date -f 'yyyy-MM-dd')
+                                        enddate   = $null
+                                    }
+                                )
+                            }
+
+                            $splatPatchUserParams = @{
+                                Uri     = "$($config.BaseUrl)/users/user"
+                                Method  = 'PATCH'
+                                Body    = ($responseUser[0] | ConvertTo-Json -Depth 10)
+                                Headers = $headers
+                            }
+                            $responseUser = Invoke-RestMethod @splatPatchUserParams -UseBasicParsing -Verbose:$false
+                            $auditMessage = "[$($employment.UserId)] Revoke Fierit-ECD role entitlement: [$($pRef.Name)] was successful"
+                        }
+                        $auditLogs.Add([PSCustomObject]@{
+                                Message = $auditMessage
+                                IsError = $false
+                            })
+                    }
+
                 }
-                $auditLogs.Add([PSCustomObject]@{
-                        Message = "[$($employment.UserId)] $auditMessage"
-                        IsError = $false
-                    })
-
-                if ($config.UseMappingSelectionAuthorisationGroup) {
-                    $subPermissionDisplayName = "[$($employment.UserId)] [$($pRef.Name)] [$mappedSelectionAuthorisationGroupCode]"
-                } else {
-                    $subPermissionDisplayName = "[$($employment.UserId)] [$($pRef.Name)]"
-                }
-
-                $subPermissions.Add(
-                    [PSCustomObject]@{
-                        DisplayName = $subPermissionDisplayName
-                    }
-                )
             }
         } catch {
             $ex = $PSItem
@@ -321,6 +451,7 @@ try {
     if (-not ($auditLogs.isError -contains $true)) {
         $success = $true
     }
+    $auditLogs.AddRange($auditLogsWarning)
 } catch {
     $ex = $PSItem
     $errorObj = Resolve-HTTPError -ErrorObject $ex
@@ -330,6 +461,16 @@ try {
             IsError = $true
         })
 } finally {
+    # With a successful result. HelloId require always Subpermissions.
+    if ( $subPermissions.count -eq 0 -and $success -eq $true) {
+        $subPermissions.Add(
+            [PSCustomObject]@{
+                DisplayName = 'No Permissions'
+                Reference   = [PSCustomObject]@{
+                    id = 'No Permissions'
+                }
+            })
+    }
     $result = [PSCustomObject]@{
         Success        = $success
         Auditlogs      = $auditLogs
