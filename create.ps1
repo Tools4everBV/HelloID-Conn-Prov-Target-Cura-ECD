@@ -35,11 +35,12 @@ if ( $p.Details.Gender -eq 'Vrouw') {
 # Account mapping
 $accountEmployee = [PSCustomObject]@{
     # $contractCustomProperty Will be added during the processing below.
-    employeecode = $null
-    gender       = $gender # M / V
-    dateofbirth  = $p.Details.BirthDate
-    begindate    = $null  # Calculated based on empoyement primary contract in conditions
-    name         = [PSCustomObject]@{
+    employeecode     = $null
+    gender           = $gender # M / V
+    dateofbirth      = $p.Details.BirthDate
+    begindate        = $null  # Calculated based on empoyement primary contract in conditions
+    movetimetoroster = $false
+    name             = [PSCustomObject]@{
         firstname      = $p.Name.NickName
         initials       = $p.Name.Initials
         prefix         = $p.Name.FamilyNamePrefix
@@ -48,7 +49,7 @@ $accountEmployee = [PSCustomObject]@{
         partnersurname = $p.Name.FamilyNamePartner
         nameassembly   = 'Eigennaam'  # 'Partnernaam'
     }
-    contact      = @(
+    contact          = @(
         # When choose to update the existing contact objects are overridden.
         [PSCustomObject]@{
             device = 'vast'
@@ -63,17 +64,18 @@ $accountEmployee = [PSCustomObject]@{
     )
 }
 
-# Not all properties are suitable to be updated during correlation. By default only the Name property will be updated
+# Not all properties are suitable to be updated during correlation. By default, only the Name property will be updated
+# Code : $contractCustomProperty Will be added during the processing below.
+# Employeecode: $contractCustomProperty Will be added during the processing below.
+# The employee Code is used for the relation between Employee and the user account (See readme)
+# A Role is Mandatory when creating a new User account
 $accountUser = [PSCustomObject]@{
-    # $contractCustomProperty Will be added during the processing below.
     code         = $null
     name         = "$($p.Name.GivenName) $($p.Name.FamilyName)".trim(' ')
     ssoname      = $p.Accounts.MicrosoftActiveDirectory.mail
     mfaname      = $p.Accounts.MicrosoftActiveDirectory.mail
     active       = $false
-    # $contractCustomProperty Will be added during the processing below.
     employeecode = $null
-    # Mandatory when creating a new User account
     role         = @(
         @{
             id        = "$($config.DefaultTeamAssignmentGuid)"
@@ -103,7 +105,7 @@ function Get-AccessToken {
         $tokenHeaders = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
         $tokenHeaders.Add('Content-Type', 'application/x-www-form-urlencoded')
         $body = @{
-            grant_type     = 'client_credentials'#'urn:ietf:params:oauth:grant-type:token-exchange'
+            grant_type     = 'client_credentials'
             client_id      = $config.ClientId
             client_secret  = $config.ClientSecret
             organisationId = $config.OrganisationId
@@ -220,6 +222,22 @@ function Merge-Object {
         }
     }
 }
+
+function Find-SingleActiveUserAccount {
+    [CmdletBinding()]
+    param(
+        $UserAccountList
+    )
+    $userAccount = [array]$UserAccountList | Where-Object { $_.active -eq $true }
+    if ($userAccount.Length -eq 0) {
+        throw "Mulitple user accounts found without a single active for Employee [$($UserAccountList.employeecode|Select -First 1)], Codes: [$($userAcUserAccountListcount.code -join ',')] Currently not Supported"
+
+    } elseif ($userAccount.Length -gt 1) {
+        throw "Mulitple active user accounts found for Employee [$($userAccount.employeecode |Select -First 1)], Codes: [$($userAccount.code -join ',')] Currently not Supported"
+    }
+    Write-Output $userAccount
+}
+
 #endregion
 
 # Begin
@@ -248,7 +266,7 @@ try {
             $accountUser.employeecode = $employment.Name
             $accountUser.code = $employment.Name
 
-            $primaryContract = $employment.Group | Sort-Object @splatSortObject  | Select-Object -First 1
+            $primaryContract = $employment.Group | Sort-Object @splatSortObject | Select-Object -First 1
             $accountEmployee.begindate = $primaryContract.StartDate
 
             # Get Employee
@@ -299,14 +317,13 @@ try {
 
                         $accountReferenceList.Add(@{
                                 EmployeeId = $($accountEmployee.employeecode)
-                                UserId     = $($accountUser.code)
+                                UserId     = $($responseUser.code)
                             })
                         break
                     }
 
                     'Update-Correlate' {
                         Write-Verbose 'Updating and correlating Fierit-ECD account'
-                        # Update employee
                         Write-Verbose "Update employee [$($accountEmployee.employeecode)]"
                         Merge-Object -Object $responseEmployee[0] -Updates $accountEmployee  -Verbose:$false
                         $splatNewEmployee = @{
@@ -326,52 +343,47 @@ try {
                         }
                         $responseUser = Invoke-RestMethod @splatGetUser -UseBasicParsing -Verbose:$false
 
-                        # Create or Update user
-                        if ($responseUser.Length -eq 0) {
-                            Write-Verbose "New user [$($accountUser.code)]"
-                            $splatNewUser = @{
-                                Uri     = "$($config.BaseUrl.Trim('/'))/users/user"
-                                Method  = 'POST'
-                                Headers = $headers
-                                body    = ($accountUser | ConvertTo-Json  -Depth 10)
-                            }
-                            $responseUser = Invoke-RestMethod @splatNewUser -UseBasicParsing -Verbose:$false
-                        } else {
-                            if ($responseUser.Length -gt 1) {
-                                throw "Mulitple user accounts found at Employee [$($accountEmployee.employeecode)], Codes/UserNames: [$($responseUser.code -join ',')] Currently not Supported"
-                            }
-                            Write-Verbose "Update user [$($accountUser.code)]"
-
-                            <# Option 1
-                            $accountUser.psobject.Properties.Remove('role')
-                            $accountUser.psobject.Properties.Remove('code')
-                            # $accountUser.psobject.Properties.Remove('ssoname')
-                            # $accountUser.psobject.Properties.Remove('mfaname')
-                            # $accountUser.psobject.Properties.Remove('active')
-                            Merge-Object -Object $responseUser[0] -Updates $accountUser -Verbose:$false
-                        #>
-                            # Update only the userName
-                            $responseUser[0].name = $accountUser.name
-
-                            $splatNewUser = @{
-                                Uri     = "$($config.BaseUrl.Trim('/'))/users/user"
-                                Method  = 'Patch'
-                                Headers = $headers
-                                body    = ($responseUser[0] | ConvertTo-Json -Depth 10)
-                            }
-                            $responseUser = Invoke-RestMethod @splatNewUser -UseBasicParsing -Verbose:$false
+                        $userAction = switch ($responseUser.Length) {
+                            { $_ -eq 0 } { 'Create-User' }
+                            { $_ -gt 0 } { 'Update-Correlate-User' }
                         }
 
+                        switch ($userAction) {
+                            'Create-User' {
+                                Write-Verbose "Create user [$($accountUser.code)]"
+                                $splatNewUser = @{
+                                    Uri     = "$($config.BaseUrl.Trim('/'))/users/user"
+                                    Method  = 'POST'
+                                    Headers = $headers
+                                    body    = ($accountUser | ConvertTo-Json  -Depth 10)
+                                }
+                                $responseUser = Invoke-RestMethod @splatNewUser -UseBasicParsing -Verbose:$false
+                            }
+                            'Update-Correlate-User' {
+                                if ($responseUser.Length -gt 1) {
+                                    $responseUser = [array](Find-SingleActiveUserAccount -UserAccountList $responseUser)
+                                }
+                                Write-Verbose "Update user [$($responseUser.code)]"
+                                $responseUser[0].name = $accountUser.name
+
+                                $splatNewUser = @{
+                                    Uri     = "$($config.BaseUrl.Trim('/'))/users/user"
+                                    Method  = 'Patch'
+                                    Headers = $headers
+                                    body    = ($responseUser[0] | ConvertTo-Json -Depth 10)
+                                }
+                                $responseUser = Invoke-RestMethod @splatNewUser -UseBasicParsing -Verbose:$false
+                            }
+                        }
                         $accountReferenceList.Add(@{
                                 EmployeeId = $($accountEmployee.employeecode)
-                                UserId     = $($accountUser.code)
+                                UserId     = $($responseUser.code)
                             })
                         break
                     }
 
                     'Correlate' {
                         Write-Verbose 'Correlating Fierit-ECD account'
-                        # Get User
                         Write-Verbose "Get User with employeeCode [$($accountUser.employeecode)]"
                         $splatGetUser = @{
                             Uri     = "$($config.BaseUrl.Trim('/'))/users/user?employeecode=$($accountUser.employeecode)"
@@ -379,26 +391,37 @@ try {
                             Headers = $headers
                         }
                         $responseUser = Invoke-RestMethod @splatGetUser -UseBasicParsing -Verbose:$false
-                        if ($responseUser.Length -eq 0) {
-                            Write-Verbose "Create User [$($accountUser.code)]"
-                            $splatNewUser = @{
-                                Uri     = "$($config.BaseUrl.Trim('/'))/users/user"
-                                Method  = 'POST'
-                                Headers = $headers
-                                body    = ($accountUser | ConvertTo-Json)
-                            }
-                            $responseUser = Invoke-RestMethod @splatNewUser -UseBasicParsing -Verbose:$false
+                        $userAction = switch ($responseUser.Length) {
+                            { $_ -eq 0 } { 'Create-User' }
+                            { $_ -gt 0 } { 'Correlate-User' }
                         }
 
+                        switch ($userAction) {
+                            'Create-User' {
+                                Write-Verbose "Create user [$($accountUser.code)]"
+                                $splatNewUser = @{
+                                    Uri     = "$($config.BaseUrl.Trim('/'))/users/user"
+                                    Method  = 'POST'
+                                    Headers = $headers
+                                    body    = ($accountUser | ConvertTo-Json)
+                                }
+                                $responseUser = Invoke-RestMethod @splatNewUser -UseBasicParsing -Verbose:$false
+                                break
+                            }
+                            'Correlate-User' {
+                                if ($responseUser.Length -gt 1) {
+                                    $responseUser = [array](Find-SingleActiveUserAccount -UserAccountList $responseUser)
+                                }
+                            }
+                        }
                         $accountReferenceList.Add(@{
                                 EmployeeId = $($accountEmployee.employeecode)
-                                UserId     = $($accountUser.code)
+                                UserId     = $($responseUser.code)
                             })
-                        break
                     }
                 }
                 $auditLogs.Add([PSCustomObject]@{
-                        Message = "$action account was successful. Employee Reference is: [$($accountEmployee.employeecode)] account: [$($accountUser.code)]"
+                        Message = "$action account was successful. Employee Reference is: [$($accountEmployee.employeecode)] account: [$($responseUser.code)]"
                         IsError = $false
                     })
             }

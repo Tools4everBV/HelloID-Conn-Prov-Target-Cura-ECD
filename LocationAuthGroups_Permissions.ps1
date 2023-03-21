@@ -23,7 +23,7 @@ function Get-AccessToken {
         $tokenHeaders = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
         $tokenHeaders.Add('Content-Type', 'application/x-www-form-urlencoded')
         $body = @{
-            grant_type     = 'client_credentials'#'urn:ietf:params:oauth:grant-type:token-exchange'
+            grant_type     = 'client_credentials'
             client_id      = $config.ClientId
             client_secret  = $config.ClientSecret
             organisationId = $config.OrganisationId
@@ -31,6 +31,24 @@ function Get-AccessToken {
         }
         $response = Invoke-RestMethod $config.TokenUrl -Method 'POST' -Headers $tokenHeaders -Body $body -Verbose:$false
         Write-Output $response.access_token
+    } catch {
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
+
+function Set-AuthorizationHeaders {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory)]
+        $Token
+    )
+    try {
+        $headers = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
+        #$headers.Add('Accept', 'application/json; charset=utf-8')
+        $headers.Add('Content-Type', 'application/json')
+        $headers.Add('Authorization', "Bearer $token")
+
+        Write-Output $headers
     } catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
@@ -79,11 +97,8 @@ function Resolve-HTTPError {
 
 try {
     Write-Verbose 'Setting authorization header'
-    $accessToken = Get-AccessToken
-    $headers = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
-    #$headers.Add('Accept', 'application/json; charset=utf-8')
-    $headers.Add('Content-Type', 'application/json')
-    $headers.Add('Authorization', "Bearer $accessToken")
+    $token = Get-AccessToken
+    $headers = Set-AuthorizationHeaders -Token $token
 
     Write-Verbose 'Retrieving all location authorisation groups'
     $splatParams = @{

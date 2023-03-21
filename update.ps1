@@ -18,12 +18,18 @@ $accountReferenceList = [System.Collections.Generic.List[PSCustomObject]]::new()
 # Employeecode : $contractCustomProperty Will be added during the processing below.
 # When choose to update the existing contact objects are overridden.
 
+$gender = 'M'
+if ( $p.Details.Gender -eq 'Vrouw') {
+    $gender = 'V'
+}
+
 $accountEmployee = [PSCustomObject]@{
-    employeecode = $null
-    gender       = 'M' # V etc..
-    dateofbirth  = # $p.Details.BirthDate
-    begindate    = $null
-    name         = [PSCustomObject]@{
+    employeecode     = $null
+    gender           = $gender # M / V
+    dateofbirth      = $p.Details.BirthDate
+    begindate        = $null
+    movetimetoroster = $false
+    name             = [PSCustomObject]@{
         firstname      = $p.Name.NickName
         initials       = $p.Name.Initials
         prefix         = $p.Name.FamilyNamePrefix
@@ -32,11 +38,11 @@ $accountEmployee = [PSCustomObject]@{
         partnersurname = $p.Name.FamilyNamePartner
         nameassembly   = 'Eigennaam'  # 'Partnernaam'
     }
-    contact      = @(
+    contact          = @(
         [PSCustomObject]@{
             device = 'vast'
             type   = 'werk'
-            value  = $p.Contact.Business.Phone.Fixed
+            value  = $p.Contact.Business.Phone.Mobile
         },
         [PSCustomObject]@{
             device = 'email'
@@ -49,6 +55,7 @@ $accountEmployee = [PSCustomObject]@{
 # Not all properties are suitable to be updated during correlation. By default, only the Name property will be updated
 # Code : $contractCustomProperty Will be added during the processing below.
 # Employeecode: $contractCustomProperty Will be added during the processing below.
+# The employee Code is used for the relation between Employee and the user account (See readme)
 # Active : Account created in the Update script needed to be Active, Because there is no Enable or Disable process triggered.
 # A Role is Mandatory when creating a new User account
 
@@ -93,6 +100,21 @@ switch ($($config.IsDebug)) {
 }
 
 #region functions
+function Find-SingleActiveUserAccount {
+    [CmdletBinding()]
+    param(
+        $UserAccountList
+    )
+    $userAccount = [array]$UserAccountList | Where-Object { $_.active -eq $true }
+    if ($userAccount.Length -eq 0) {
+        throw "Mulitple user accounts found without a single active for Employee [$($UserAccountList.employeecode|Select -First 1)], Codes: [$($userAcUserAccountListcount.code -join ',')] Currently not Supported"
+
+    } elseif ($userAccount.Length -gt 1) {
+        throw "Mulitple active user accounts found for Employee [$($userAccount.employeecode |Select -First 1)], Codes: [$($userAccount.code -join ',')] Currently not Supported"
+    }
+    Write-Output $userAccount
+}
+
 function Get-AccessToken {
     [CmdletBinding()]
     param ()
@@ -100,7 +122,7 @@ function Get-AccessToken {
         $tokenHeaders = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
         $tokenHeaders.Add('Content-Type', 'application/x-www-form-urlencoded')
         $body = @{
-            grant_type     = 'client_credentials'#'urn:ietf:params:oauth:grant-type:token-exchange'
+            grant_type     = 'client_credentials'
             client_id      = $config.ClientId
             client_secret  = $config.ClientSecret
             organisationId = $config.OrganisationId
@@ -112,7 +134,6 @@ function Get-AccessToken {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
-
 function Set-AuthorizationHeaders {
     [CmdletBinding()]
     param (
@@ -269,12 +290,9 @@ try {
     $allAccounts.AddRange($accountToUpdate)
     $currentAccountList = @{}
     foreach ($accountNr in $allAccounts ) {
+        # Get Employee
         $accountEmployeeLoop = $accountEmployee.psobject.copy()
         $accountEmployeeLoop.employeecode = "$accountNr"
-
-        $accountUserLoop = $accountUser.psobject.copy()
-        $accountUserLoop.employeecode = "$accountNr"
-        $accountUserLoop.code = "$accountNr"
 
         $primaryContract = $null
         $primaryContract = ($desiredContractsGrouped | Where-Object { $_.name -eq $accountNr }).Group | Sort-Object @splatSortObject  | Select-Object -First 1
@@ -282,13 +300,6 @@ try {
             $accountEmployeeLoop.begindate = ([datetime]($primaryContract.StartDate)).ToString('yyyy-MM-dd')
         }
 
-        $currentAref = $null
-        $currentAref = $aref | Where-Object { $_.employeeId -eq $accountNr }
-        if ($null -ne $currentAref ) {
-            $accountUserLoop.code = $currentAref.UserId
-        }
-
-        # Get Employee
         Write-Verbose "Get Employee with employeeCode [$($accountNr)]"
         $splatGetEmployee = @{
             Uri     = "$($config.BaseUrl.Trim('/'))/employees/employee?employeecode=$($accountNr)"
@@ -299,14 +310,36 @@ try {
         $currentEmployee = Invoke-RestMethod @splatGetEmployee -UseBasicParsing -Verbose:$false
 
         # Get User
-        Write-Verbose "Get user with employeeCode [$($accountNr)]"
-        $splatGetUser = @{
-            Uri     = "$($config.BaseUrl.Trim('/'))/users/user?employeecode=$($accountNr)"
-            Method  = 'GET'
-            Headers = $headers
+        $accountUserLoop = $accountUser.psobject.copy()
+        $accountUserLoop.employeecode = "$accountNr"
+
+        $currentAref = $null
+        $currentAref = $aref | Where-Object { $_.employeeId -eq $accountNr }
+
+        if ($null -ne $currentAref ) {
+            $accountUserLoop.code = $currentAref.UserId
+            Write-Verbose "Get user with Code [$($accountUserLoop.code)]"
+            $splatGetUser = @{
+                Uri     = "$($config.BaseUrl.Trim('/'))/users/user?usercode=$($accountUserLoop.code)"
+                Method  = 'GET'
+                Headers = $headers
+            }
+            $currentUser = $null
+            $currentUser = (Invoke-RestMethod @splatGetUser -UseBasicParsing -Verbose:$false)
+        } else {
+            $accountUserLoop.code = "$accountNr"
+            Write-Verbose "Get user with employeeCode [$($accountNr)]"
+            $splatGetUser = @{
+                Uri     = "$($config.BaseUrl.Trim('/'))/users/user?employeecode=$($accountNr)"
+                Method  = 'GET'
+                Headers = $headers
+            }
+            $currentUser = Invoke-RestMethod @splatGetUser -UseBasicParsing -Verbose:$false
+            if ($currentUser.Length -gt 1) {
+                $currentUser = [array](Find-SingleActiveUserAccount -UserAccountList $currentUser)
+            }
+            $accountUserLoop.code = $currentUser.code
         }
-        $currentUser = $null
-        $currentUser = (Invoke-RestMethod @splatGetUser -UseBasicParsing -Verbose:$false)
 
         $currentAccountList["$accountNr"] += @{
             CurrentEmployee = $currentEmployee | Select-Object -First 1
@@ -403,13 +436,13 @@ try {
                     }
                 }
                 $accountReferenceList.Add(@{
-                        EmployeeId = $($currentAccount.accountEmployee.employeecode)
-                        UserId     = $($currentAccount.accountUser.code)
+                        EmployeeId = $($responseEmployee.employeecode)
+                        UserId     = $($responseUser.code)
                     })
 
                 $auditLogs.Add([PSCustomObject]@{
                         Action  = 'CreateAccount'
-                        Message = "[$accountNr] Create account was successful. Employee Reference is: [$($currentAccount.accountEmployee.employeecode)] account: [$($currentAccount.accountUser.code)]"
+                        Message = "[$accountNr] Create account was successful. Employee Reference is: [$($currentAccount.CurrentEmployee.employeecode)] account: [$($currentAccount.CurrentUser.code)]"
                         IsError = $false
                     })
             }
@@ -472,8 +505,8 @@ try {
                                     }
                                     $responseUser = Invoke-RestMethod @splatNewUser -UseBasicParsing -Verbose:$false
                                     $accountReferenceList.Add(@{
-                                            EmployeeId = $($currentAccount.accountEmployee.employeecode)
-                                            UserId     = $($currentAccount.accountUser.code)
+                                            EmployeeId = $($currentAccount.CurrentEmployee.employeecode)
+                                            UserId     = $($currentAccount.CurrentUser.code)
                                         })
 
                                     $auditLogs.Add([PSCustomObject]@{
@@ -566,9 +599,6 @@ try {
                         if ($currentAccount.UserFound) {
                             # Update User
                             Write-Verbose "Update User [$($currentAccount.accountUser.code)]"
-
-                            Write-Verbose ($currentAccount.CurrentUser | ConvertTo-Json) -Verbose
-
                             Write-Verbose "Disable userAccount [$($currentAccount.accountUser.code)]"
                             $currentAccount.CurrentUser.active = $false
                             $auditLogsIfRevokeSuccess.Add([PSCustomObject]@{

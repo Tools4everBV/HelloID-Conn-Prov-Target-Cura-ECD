@@ -25,7 +25,8 @@
   - [Getting started](#getting-started)
     - [Connection settings](#connection-settings)
     - [Prerequisites](#prerequisites)
-      - [Creation / correlation process](#creation--correlation-process)
+      - [Creation process](#creation-process)
+      - [Correlation process](#correlation-process)
   - [Provisioning](#provisioning)
     - [Supported Features](#supported-features)
         - [Supported Action Details](#supported-action-details)
@@ -81,11 +82,16 @@ Example:
   getValue();
   ```
 
-#### Creation / correlation process
+#### Creation process
 New functionality is the possibility to update the account in the target system during the correlation process. By default, this behavior is disabled. Meaning, the account will only be created or correlated.
 You can change this behavior in the `create.ps1` by setting the boolean `$updatePerson` to the value of `$true`.
 
-> Be aware that this might have unexpected implications.
+#### Correlation process
+Since Fierit-ECD has both employee and user account objects, we need to create or correlate both objects when creating a new account *(Also in the creation section of the Update.ps1 script).* The employee object is always correlated with the EmployeeCode, which is a combination of the employee number and contract number. However, the relationship in Fierit-ECD between an employee and a user account is one-to-many, but we have been advised by the vendor to use a one-to-one relationship, which we currently manage ourselves in the connector. The connector checks if an account is already associated with the employee object and correlates it, after which it is managed in HelloID.
+
+Unfortunately, there are cases where multiple accounts are linked to an employee. If this happens, the script looks for an active account. When one is found, it is correlated. If more than one or none are found, the action produces an error message that needs to be resolved manually. This will always be the case when reboarding an employee with multiple accounts, as removing the entitlement will deactivate the account.
+> :bulb: **How to Solve:** In the case described above you must remove all user accounts but one for the specific Employee. Or make one account `Active` and re-run the HelloID Enforcement.
+
 
 ## Provisioning
 
@@ -122,6 +128,7 @@ Using this connector you will have the ability to create and manage the followin
 - The web service does not support Patch requests. So the user is retrieved from Fierit, adds the new permission, and the user is updated with the current permission and new permission. Therefore, concurrent sessions must be set to 1.
  - A dummy or Default Role for creating new users. It's required to set a role when creating a new User. Because they take place in the account lifecycle the first role cannot be managed through entitlements.
  - Because the Connector Support multiplies account per Person, the permission Update script must also be used. You can place the Grant script here since this works in both situations.
+ - In some cases re-boarding is not supported. Which mean that a manual action is required. See: [Correlation process](#correlation-process)
 
 #### Business Rules Validation Check
 

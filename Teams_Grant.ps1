@@ -74,7 +74,7 @@ function Get-AccessToken {
         $tokenHeaders = [System.Collections.Generic.Dictionary[[String], [String]]]::new()
         $tokenHeaders.Add('Content-Type', 'application/x-www-form-urlencoded')
         $body = @{
-            grant_type     = 'client_credentials'#'urn:ietf:params:oauth:grant-type:token-exchange'
+            grant_type     = 'client_credentials'
             client_id      = $config.ClientId
             client_secret  = $config.ClientSecret
             organisationId = $config.OrganisationId
