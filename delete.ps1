@@ -97,6 +97,49 @@ function Resolve-HTTPError {
         Write-Output $httpErrorObj
     }
 }
+
+function Invoke-FieritWebRequest {
+    [CmdletBinding()]
+    param(
+        [System.Uri]
+        $Uri,
+
+        [string]
+        $Method = 'Get',
+
+        $Headers,
+
+        [switch]
+        $UseBasicParsing,
+
+
+        $body
+    )
+    try {
+        $splatWebRequest = @{
+            Uri             = $Uri
+            Method          = $Method
+            Headers         = $Headers
+            UseBasicParsing = $UseBasicParsing
+        }
+
+        if ( -not [string]::IsNullOrEmpty( $body )) {
+            $splatWebRequest['Body'] = $body
+        }
+        $rawResult = Invoke-WebRequest @splatWebRequest -Verbose:$false -ErrorAction Stop
+        if ($null -ne $rawResult.Headers -and (-not [string]::IsNullOrEmpty($($rawResult.Headers['processIdentifier'])))) {
+            Write-Verbose "WebCall executed. Successfull [URL: $($Uri.PathAndQuery) Method: $($Method) ProcessID: $($rawResult.Headers['processIdentifier'])]"
+        }
+        if ($rawResult.Content) {
+            Write-Output ($rawResult.Content | ConvertFrom-Json )
+        }
+    } catch {
+        if ($null -ne $_.Exception.Response.Headers -and (-not [string]::IsNullOrEmpty($($_.Exception.Response.Headers['processIdentifier'])))) {
+            Write-Verbose "WebCall executed. Failed [URL: $($Uri.PathAndQuery) Method: $($Method) ProcessID: $($_.Exception.Response.Headers['processIdentifier'])]" -Verbose
+        }
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
 #endregion
 
 
@@ -122,7 +165,7 @@ try {
                 Method  = 'GET'
                 Headers = $headers
             }
-            $responseUser = (Invoke-RestMethod @splatGetUser -UseBasicParsing -Verbose:$false)[0]
+            $responseUser = Invoke-FieritWebRequest @splatGetUser -UseBasicParsing
             if ($null -eq $responseUser) {
                 $userFound = 'NotFound'
                 Write-Warning "[DryRun] [$($employment.UserId)] Fierit-ECD account not found. Possibly already deleted, skipping action."
@@ -147,7 +190,7 @@ try {
                             Headers = $headers
                             body    = ($responseUser | ConvertTo-Json -Depth 10)
                         }
-                        $responseUser = Invoke-RestMethod @splatNewUser -UseBasicParsing -Verbose:$false
+                        $responseUser = Invoke-FieritWebRequest @splatNewUser -UseBasicParsing
 
 
                         $auditLogs.Add([PSCustomObject]@{

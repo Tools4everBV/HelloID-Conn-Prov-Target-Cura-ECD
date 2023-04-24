@@ -107,7 +107,7 @@ function Find-SingleActiveUserAccount {
     )
     $userAccount = [array]$UserAccountList | Where-Object { $_.active -eq $true }
     if ($userAccount.Length -eq 0) {
-        throw "Mulitple user accounts found without a single active for Employee [$($UserAccountList.employeecode|Select -First 1)], Codes: [$($userAcUserAccountListcount.code -join ',')] Currently not Supported"
+        throw "Mulitple user accounts found without a single active for Employee [$($UserAccountList.employeecode|Select -First 1)], Codes: [$($UserAccountList.code -join ',')] Currently not Supported"
 
     } elseif ($userAccount.Length -gt 1) {
         throw "Mulitple active user accounts found for Employee [$($userAccount.employeecode |Select -First 1)], Codes: [$($userAccount.code -join ',')] Currently not Supported"
@@ -258,6 +258,49 @@ function Compare-Join {
     }
     Write-Output $Left.Where({ -not [string]::IsNullOrEmpty($_) }) , $Right, $common
 }
+
+function Invoke-FieritWebRequest {
+    [CmdletBinding()]
+    param(
+        [System.Uri]
+        $Uri,
+
+        [string]
+        $Method = 'Get',
+
+        $Headers,
+
+        [switch]
+        $UseBasicParsing,
+
+
+        $body
+    )
+    try {
+        $splatWebRequest = @{
+            Uri             = $Uri
+            Method          = $Method
+            Headers         = $Headers
+            UseBasicParsing = $UseBasicParsing
+        }
+
+        if ( -not [string]::IsNullOrEmpty( $body )) {
+            $splatWebRequest['Body'] = $body
+        }
+        $rawResult = Invoke-WebRequest @splatWebRequest -Verbose:$false -ErrorAction Stop
+        if ($null -ne $rawResult.Headers -and (-not [string]::IsNullOrEmpty($($rawResult.Headers['processIdentifier'])))) {
+            Write-Verbose "WebCall executed. Successfull [URL: $($Uri.PathAndQuery) Method: $($Method) ProcessID: $($rawResult.Headers['processIdentifier'])]"
+        }
+        if ($rawResult.Content) {
+            Write-Output ($rawResult.Content | ConvertFrom-Json )
+        }
+    } catch {
+        if ($null -ne $_.Exception.Response.Headers -and (-not [string]::IsNullOrEmpty($($_.Exception.Response.Headers['processIdentifier'])))) {
+            Write-Verbose "WebCall executed. Failed [URL: $($Uri.PathAndQuery) Method: $($Method) ProcessID: $($_.Exception.Response.Headers['processIdentifier'])]" -Verbose
+        }
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
 #endregion
 
 try {
@@ -307,7 +350,7 @@ try {
             Headers = $headers
         }
         $currentEmployee = $null
-        $currentEmployee = Invoke-RestMethod @splatGetEmployee -UseBasicParsing -Verbose:$false
+        $currentEmployee = Invoke-FieritWebRequest @splatGetEmployee -UseBasicParsing
 
         # Get User
         $accountUserLoop = $accountUser.psobject.copy()
@@ -325,7 +368,7 @@ try {
                 Headers = $headers
             }
             $currentUser = $null
-            $currentUser = (Invoke-RestMethod @splatGetUser -UseBasicParsing -Verbose:$false)
+            $currentUser = Invoke-FieritWebRequest @splatGetUser -UseBasicParsing
         } else {
             $accountUserLoop.code = "$accountNr"
             Write-Verbose "Get user with employeeCode [$($accountNr)]"
@@ -334,19 +377,19 @@ try {
                 Method  = 'GET'
                 Headers = $headers
             }
-            $currentUser = Invoke-RestMethod @splatGetUser -UseBasicParsing -Verbose:$false
-            if ($currentUser.Length -gt 1) {
-                $currentUser = [array](Find-SingleActiveUserAccount -UserAccountList $currentUser)
+            $currentUser = Invoke-FieritWebRequest @splatGetUser -UseBasicParsing
+            if ($null -eq $currentUser) {
+                $currentUser = Find-SingleActiveUserAccount -UserAccountList $currentUser
             }
             $accountUserLoop.code = $currentUser.code
         }
 
         $currentAccountList["$accountNr"] += @{
-            CurrentEmployee = $currentEmployee | Select-Object -First 1
-            EmployeeFound   = "$(if ($currentEmployee.Length -eq 0) { 'NotFound' } Else { 'Found' })"
+            CurrentEmployee = $currentEmployee
+            EmployeeFound   = "$(if ($null -eq $currentEmployee) { 'NotFound' } Else { 'Found' })"
             accountEmployee = $accountEmployeeLoop
-            CurrentUser     = $currentUser | Select-Object -First 1
-            UserFound       = "$(if ($currentUser.Length -eq 0) { 'NotFound' } Else { 'Found' })"
+            CurrentUser     = $currentUser
+            UserFound       = "$(if ($null -eq $currentUser) { 'NotFound' } Else { 'Found' })"
             accountUser     = $accountUserLoop
         }
 
@@ -381,7 +424,7 @@ try {
                                 Headers = $headers
                                 body    = ($currentAccount.CurrentEmployee | ConvertTo-Json  -Depth 10)
                             }
-                            $responseEmployee = Invoke-RestMethod @splatNewEmployee -UseBasicParsing -Verbose:$false
+                            $responseEmployee = Invoke-FieritWebRequest @splatNewEmployee -UseBasicParsing
                         } else {
                             $auditLogs.Add([PSCustomObject]@{
                                     Action  = 'CreateAccount'
@@ -400,7 +443,7 @@ try {
                             Headers = $headers
                             body    = ($currentAccount.accountEmployee | ConvertTo-Json  -Depth 10)
                         }
-                        $responseEmployee = Invoke-RestMethod @splatNewEmployee -UseBasicParsing -Verbose:$false
+                        $responseEmployee = Invoke-FieritWebRequest @splatNewEmployee -UseBasicParsing
                         break
                     }
                 }
@@ -419,7 +462,7 @@ try {
                             Headers = $headers
                             body    = ( $currentAccount.CurrentUser | ConvertTo-Json -Depth 10)
                         }
-                        $responseUser = Invoke-RestMethod @splatNewUser -UseBasicParsing -Verbose:$false
+                        $responseUser = Invoke-FieritWebRequest @splatNewUser -UseBasicParsing
                         break;
                     }
                     'NotFound' {
@@ -431,7 +474,7 @@ try {
                             Headers = $headers
                             body    = ($currentAccount.accountUser | ConvertTo-Json  -Depth 10)
                         }
-                        $responseUser = Invoke-RestMethod @splatNewUser -UseBasicParsing -Verbose:$false
+                        $responseUser = Invoke-FieritWebRequest @splatNewUser -UseBasicParsing
                         break
                     }
                 }
@@ -490,7 +533,7 @@ try {
                                 Headers = $headers
                                 body    = ($currentAccount.CurrentEmployee | ConvertTo-Json  -Depth 10)
                             }
-                            $responseEmployee = Invoke-RestMethod @splatNewEmployee -UseBasicParsing -Verbose:$false
+                            $responseEmployee = Invoke-FieritWebRequest @splatNewEmployee -UseBasicParsing
 
                             switch ($currentAccount.UserFound) {
                                 'Found' {
@@ -503,7 +546,7 @@ try {
                                         Headers = $headers
                                         body    = ( $currentAccount.CurrentUser | ConvertTo-Json -Depth 10)
                                     }
-                                    $responseUser = Invoke-RestMethod @splatNewUser -UseBasicParsing -Verbose:$false
+                                    $responseUser = Invoke-FieritWebRequest @splatNewUser -UseBasicParsing
                                     $accountReferenceList.Add(@{
                                             EmployeeId = $($currentAccount.CurrentEmployee.employeecode)
                                             UserId     = $($currentAccount.CurrentUser.code)
@@ -594,7 +637,7 @@ try {
                             Headers = $headers
                             body    = ($currentAccount.CurrentEmployee | ConvertTo-Json  -Depth 10)
                         }
-                        $responseEmployee = Invoke-RestMethod @splatNewEmployee -UseBasicParsing -Verbose:$false
+                        $responseEmployee = Invoke-FieritWebRequest @splatNewEmployee -UseBasicParsing
 
                         if ($currentAccount.UserFound) {
                             # Update User
@@ -638,7 +681,7 @@ try {
                                 Headers = $headers
                                 body    = ( $currentAccount.CurrentUser | ConvertTo-Json -Depth 10)
                             }
-                            $responseUser = Invoke-RestMethod @splatNewUser -UseBasicParsing -Verbose:$false
+                            $responseUser = Invoke-FieritWebRequest @splatNewUser -UseBasicParsing
 
                             $auditLogs.AddRange($auditLogsIfRevokeSuccess)
                             $auditLogs.Add([PSCustomObject]@{

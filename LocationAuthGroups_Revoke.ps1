@@ -98,6 +98,49 @@ function Resolve-HTTPError {
         Write-Output $httpErrorObj
     }
 }
+
+function Invoke-FieritWebRequest {
+    [CmdletBinding()]
+    param(
+        [System.Uri]
+        $Uri,
+
+        [string]
+        $Method = 'Get',
+
+        $Headers,
+
+        [switch]
+        $UseBasicParsing,
+
+
+        $body
+    )
+    try {
+        $splatWebRequest = @{
+            Uri             = $Uri
+            Method          = $Method
+            Headers         = $Headers
+            UseBasicParsing = $UseBasicParsing
+        }
+
+        if ( -not [string]::IsNullOrEmpty( $body )) {
+            $splatWebRequest['Body'] = $body
+        }
+        $rawResult = Invoke-WebRequest @splatWebRequest -Verbose:$false -ErrorAction Stop
+        if ($null -ne $rawResult.Headers -and (-not [string]::IsNullOrEmpty($($rawResult.Headers['processIdentifier'])))) {
+            Write-Verbose "WebCall executed. Successfull [URL: $($Uri.PathAndQuery) Method: $($Method) ProcessID: $($rawResult.Headers['processIdentifier'])]"
+        }
+        if ($rawResult.Content) {
+            Write-Output ($rawResult.Content | ConvertFrom-Json )
+        }
+    } catch {
+        if ($null -ne $_.Exception.Response.Headers -and (-not [string]::IsNullOrEmpty($($_.Exception.Response.Headers['processIdentifier'])))) {
+            Write-Verbose "WebCall executed. Failed [URL: $($Uri.PathAndQuery) Method: $($Method) ProcessID: $($_.Exception.Response.Headers['processIdentifier'])]" -Verbose
+        }
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
 #endregion
 
 try {
@@ -113,8 +156,8 @@ try {
                 Method  = 'GET'
                 Headers = $headers
             }
-            $responseUser = Invoke-RestMethod @splatParams -Verbose:$false
-            if ($responseUser.Length -eq 0) {
+            $responseUser = Invoke-FieritWebRequest @splatParams  -UseBasicParsing
+            if ($null -eq $responseUser) {
                 $userFound = 'NotFound'
                 if ($dryRun -eq $true) {
                     Write-Warning "[DryRun] [$($employment.UserId)] Fierit-ECD account not found. Possibly already deleted, skipping action."
@@ -133,36 +176,36 @@ try {
                     'Found' {
                         Write-Verbose "Revoking Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)]"
 
-                        if (($responseUser[0].locationauthorisationgroup.Length -eq 0) -or
-                            ($responseUser[0].locationauthorisationgroup.code -notcontains $pRef.code)) {
+                        if (($responseUser.locationauthorisationgroup.Length -eq 0) -or
+                            ($responseUser.locationauthorisationgroup.code -notcontains $pRef.code)) {
 
                             $auditMessage = "Revoke Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)]. Already removed"
 
                         } else {
                             Write-Verbose 'Creating list of currently assigned locationAuthGroups'
                             $currentLocationAuthGroups = [System.Collections.Generic.List[object]]::new()
-                            $currentLocationAuthGroups.AddRange($responseUser[0].locationauthorisationgroup)
+                            $currentLocationAuthGroups.AddRange($responseUser.locationauthorisationgroup)
 
                             Write-Verbose 'Removing locationAuthGroup from the list'
                             $locationAuthGroupToRemove = $currentLocationAuthGroups | Where-Object { $_.code -eq $pRef.Code }
                             [void]$currentLocationAuthGroups.Remove($locationAuthGroupToRemove)
 
-                            $responseUser[0].locationauthorisationgroup = $currentLocationAuthGroups
+                            $responseUser.locationauthorisationgroup = $currentLocationAuthGroups
 
                             # An empty array doensn't remove the locationauthorisationgroup
-                            if ($responseUser[0].locationauthorisationgroup.count -eq 0) {
-                                $responseUser[0].locationauthorisationgroup = $null
+                            if ($responseUser.locationauthorisationgroup.count -eq 0) {
+                                $responseUser.locationauthorisationgroup = $null
                             }
 
                             $splatPatchUserParams = @{
                                 Uri     = "$($config.BaseUrl)/users/user"
                                 Method  = 'PATCH'
                                 Headers = $headers
-                                Body    = ($responseUser[0] | ConvertTo-Json -Depth 10)
+                                Body    = ($responseUser | ConvertTo-Json -Depth 10)
                             }
                             $auditMessage = "Revoke Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)] was successful"
 
-                            $responseUser = Invoke-RestMethod @splatPatchUserParams -UseBasicParsing -Verbose:$false
+                            $responseUser = Invoke-FieritWebRequest @splatPatchUserParams -UseBasicParsing
                         }
                         $auditLogs.Add([PSCustomObject]@{
                                 Message = "[$($employment.UserId)] $auditMessage"

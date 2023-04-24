@@ -101,6 +101,49 @@ function Set-AuthorizationHeaders {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
+
+function Invoke-FieritWebRequest {
+    [CmdletBinding()]
+    param(
+        [System.Uri]
+        $Uri,
+
+        [string]
+        $Method = 'Get',
+
+        $Headers,
+
+        [switch]
+        $UseBasicParsing,
+
+
+        $body
+    )
+    try {
+        $splatWebRequest = @{
+            Uri             = $Uri
+            Method          = $Method
+            Headers         = $Headers
+            UseBasicParsing = $UseBasicParsing
+        }
+
+        if ( -not [string]::IsNullOrEmpty( $body )) {
+            $splatWebRequest['Body'] = $body
+        }
+        $rawResult = Invoke-WebRequest @splatWebRequest -Verbose:$false -ErrorAction Stop
+        if ($null -ne $rawResult.Headers -and (-not [string]::IsNullOrEmpty($($rawResult.Headers['processIdentifier'])))) {
+            Write-Verbose "WebCall executed. Successfull [URL: $($Uri.PathAndQuery) Method: $($Method) ProcessID: $($rawResult.Headers['processIdentifier'])]"
+        }
+        if ($rawResult.Content) {
+            Write-Output ($rawResult.Content | ConvertFrom-Json )
+        }
+    } catch {
+        if ($null -ne $_.Exception.Response.Headers -and (-not [string]::IsNullOrEmpty($($_.Exception.Response.Headers['processIdentifier'])))) {
+            Write-Verbose "WebCall executed. Failed [URL: $($Uri.PathAndQuery) Method: $($Method) ProcessID: $($_.Exception.Response.Headers['processIdentifier'])]" -Verbose
+        }
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
 #endregion
 
 try {
@@ -114,9 +157,9 @@ try {
                 Headers = $headers
             }
             Write-Verbose "Getting employee with code [$($employee.EmployeeId)]"
-            $user = Invoke-RestMethod @splatRequestUser -UseBasicParsing -Verbose:$false
+            $user = Invoke-FieritWebRequest @splatRequestUser -UseBasicParsing
 
-            if ($user.Length -eq 0) {
+            if ($null -eq $user) {
                 $userFound = 'NotFound'
                 if ($dryRun -eq $true) {
                     Write-Warning "[DryRun] [$($employee.EmployeeId)] Fierit-ECD account not found. Possibly already deleted, skipping action."
@@ -139,20 +182,20 @@ try {
                             id = $pRef.id
                         }
 
-                        if ($user[0].team.id -Contains $removeTeam.id) {
-                            $user[0].team = [array]($user[0].team | Where-Object { $_.id –ne $removeTeam.id })
+                        if ($user.team.id -Contains $removeTeam.id) {
+                            $user.team = [array]($user.team | Where-Object { $_.id –ne $removeTeam.id })
 
-                            if ($null -eq $user[0].team) {
-                               $null =  $user[0].PSObject.Properties.Remove('team')
+                            if ($null -eq $user.team) {
+                               $null =  $user.PSObject.Properties.Remove('team')
                             }
 
                             $splatRequestUpdateUser = @{
                                 Uri     = "$($config.BaseUrl.Trim('/'))/employees/employee"
                                 Method  = 'PATCH'
                                 Headers = $headers
-                                Body    = ($user[0] | ConvertTo-Json -Depth 10)
+                                Body    = ($user | ConvertTo-Json -Depth 10)
                             }
-                            $null = Invoke-RestMethod @splatRequestUpdateUser -UseBasicParsing -Verbose:$false
+                            $null = Invoke-FieritWebRequest @splatRequestUpdateUser -UseBasicParsing
 
                             $auditLogs.Add([PSCustomObject]@{
                                 Message = "Employee: [$($employee.EmployeeId)], Revoke Fierit-ECD Team entitlement: [$($pRef.name)] was successful"

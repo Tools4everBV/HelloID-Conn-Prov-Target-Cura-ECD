@@ -160,6 +160,49 @@ function Set-AuthorizationHeaders {
     }
 }
 
+function Invoke-FieritWebRequest {
+    [CmdletBinding()]
+    param(
+        [System.Uri]
+        $Uri,
+
+        [string]
+        $Method = 'Get',
+
+        $Headers,
+
+        [switch]
+        $UseBasicParsing,
+
+
+        $body
+    )
+    try {
+        $splatWebRequest = @{
+            Uri             = $Uri
+            Method          = $Method
+            Headers         = $Headers
+            UseBasicParsing = $UseBasicParsing
+        }
+
+        if ( -not [string]::IsNullOrEmpty( $body )) {
+            $splatWebRequest['Body'] = $body
+        }
+        $rawResult = Invoke-WebRequest @splatWebRequest -Verbose:$false -ErrorAction Stop
+        if ($null -ne $rawResult.Headers -and (-not [string]::IsNullOrEmpty($($rawResult.Headers['processIdentifier'])))) {
+            Write-Verbose "WebCall executed. Successfull [URL: $($Uri.PathAndQuery) Method: $($Method) ProcessID: $($rawResult.Headers['processIdentifier'])]"
+        }
+        if ($rawResult.Content) {
+            Write-Output ($rawResult.Content | ConvertFrom-Json )
+        }
+    } catch {
+        if ($null -ne $_.Exception.Response.Headers -and (-not [string]::IsNullOrEmpty($($_.Exception.Response.Headers['processIdentifier'])))) {
+            Write-Verbose "WebCall executed. Failed [URL: $($Uri.PathAndQuery) Method: $($Method) ProcessID: $($_.Exception.Response.Headers['processIdentifier'])]" -Verbose
+        }
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
+
 #endregion
 
 try {
@@ -206,11 +249,10 @@ try {
                 Method  = 'GET'
                 Headers = $headers
             }
-            $responseUser = Invoke-RestMethod @splatParams -Verbose:$false
-            if ($responseUser.Length -eq 0) {
+            $existingUser = Invoke-FieritWebRequest @splatParams -UseBasicParsing
+            if ($null -eq $existingUser) {
                 throw "A user with usercode [$($employment.UserId)] could not be found"
             }
-            $existingUser = $responseUser[0]
 
             $desiredLocationAuthGroups = [System.Collections.Generic.List[object]]::new()
             if ($existingUser.locationauthorisationgroup.Length -gt 0) {
@@ -253,7 +295,7 @@ try {
                                 Headers = $headers
                                 Body    = ($existingUser | ConvertTo-Json -Depth 10)
                             }
-                            $null = Invoke-RestMethod @splatPatchUserParams -UseBasicParsing -Verbose:$false
+                            $null = Invoke-FieritWebRequest @splatPatchUserParams -UseBasicParsing
                             $auditLogs.Add([PSCustomObject]@{
                                     Message = "[$($employment.UserId)] Grant Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)] was successful"
                                     IsError = $false
@@ -285,7 +327,7 @@ try {
                                 Headers = $headers
                                 Body    = ($existingUser | ConvertTo-Json -Depth 10)
                             }
-                            $null = Invoke-RestMethod @splatPatchUserParams -UseBasicParsing -Verbose:$false
+                            $null = Invoke-FieritWebRequest @splatPatchUserParams -UseBasicParsing
                             $auditMessage = "[$($employment.UserId)] Revoke Fierit-ECD locationAuthGroup entitlement: [$($pRef.Name)] was successful"
                         }
                         $auditLogs.Add([PSCustomObject]@{

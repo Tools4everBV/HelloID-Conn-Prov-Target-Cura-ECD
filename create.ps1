@@ -230,13 +230,58 @@ function Find-SingleActiveUserAccount {
     )
     $userAccount = [array]$UserAccountList | Where-Object { $_.active -eq $true }
     if ($userAccount.Length -eq 0) {
-        throw "Mulitple user accounts found without a single active for Employee [$($UserAccountList.employeecode|Select -First 1)], Codes: [$($userAcUserAccountListcount.code -join ',')] Currently not Supported"
+        throw "Mulitple user accounts found without a single active for Employee [$($UserAccountList.employeecode|Select -First 1)], Codes: [$($UserAccountList.code -join ',')] Currently not Supported"
 
     } elseif ($userAccount.Length -gt 1) {
         throw "Mulitple active user accounts found for Employee [$($userAccount.employeecode |Select -First 1)], Codes: [$($userAccount.code -join ',')] Currently not Supported"
     }
     Write-Output $userAccount
 }
+
+
+function Invoke-FieritWebRequest {
+    [CmdletBinding()]
+    param(
+        [System.Uri]
+        $Uri,
+
+        [string]
+        $Method = 'Get',
+
+        $Headers,
+
+        [switch]
+        $UseBasicParsing,
+
+
+        $body
+    )
+    try {
+        $splatWebRequest = @{
+            Uri             = $Uri
+            Method          = $Method
+            Headers         = $Headers
+            UseBasicParsing = $UseBasicParsing
+        }
+
+        if ( -not [string]::IsNullOrEmpty( $body )) {
+            $splatWebRequest['Body'] = $body
+        }
+        $rawResult = Invoke-WebRequest @splatWebRequest -Verbose:$false -ErrorAction Stop
+        if ($null -ne $rawResult.Headers -and (-not [string]::IsNullOrEmpty($($rawResult.Headers['processIdentifier'])))) {
+            Write-Verbose "WebCall executed. Successfull [URL: $($Uri.PathAndQuery) Method: $($Method) ProcessID: $($rawResult.Headers['processIdentifier'])]"
+        }
+        if ($rawResult.Content) {
+            Write-Output ($rawResult.Content | ConvertFrom-Json )
+        }
+    } catch {
+        if ($null -ne $_.Exception.Response.Headers -and (-not [string]::IsNullOrEmpty($($_.Exception.Response.Headers['processIdentifier'])))) {
+            Write-Verbose "WebCall executed. Failed [URL: $($Uri.PathAndQuery) Method: $($Method) ProcessID: $($_.Exception.Response.Headers['processIdentifier'])]" -Verbose
+        }
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
+
 
 #endregion
 
@@ -275,9 +320,9 @@ try {
                 Method  = 'GET'
                 Headers = $headers
             }
-            $responseEmployee = Invoke-RestMethod @splatGetEmployee -UseBasicParsing -Verbose:$false
+            $responseEmployee = Invoke-FieritWebRequest @splatGetEmployee -UseBasicParsing
 
-            if ($responseEmployee.Length -eq 0) {
+            if ($null -eq $responseEmployee) {
                 $action = 'Create-Correlate'
             } elseif ($updatePerson -eq $true) {
                 $action = 'Update-Correlate'
@@ -303,7 +348,7 @@ try {
                             Headers = $headers
                             body    = ($accountEmployee | ConvertTo-Json  -Depth 10)
                         }
-                        $responseEmployee = Invoke-RestMethod @splatNewEmployee -UseBasicParsing -Verbose:$false
+                        $responseEmployee = Invoke-FieritWebRequest @splatNewEmployee -UseBasicParsing
 
                         # Create User
                         Write-Verbose "Create User [$($accountUser.employeecode)]"
@@ -313,7 +358,7 @@ try {
                             Headers = $headers
                             body    = ($accountUser | ConvertTo-Json  -Depth 10)
                         }
-                        $responseUser = Invoke-RestMethod @splatNewUser -UseBasicParsing -Verbose:$false
+                        $responseUser =  Invoke-FieritWebRequest @splatNewUser -UseBasicParsing
 
                         $accountReferenceList.Add(@{
                                 EmployeeId = $($accountEmployee.employeecode)
@@ -325,14 +370,14 @@ try {
                     'Update-Correlate' {
                         Write-Verbose 'Updating and correlating Fierit-ECD account'
                         Write-Verbose "Update employee [$($accountEmployee.employeecode)]"
-                        Merge-Object -Object $responseEmployee[0] -Updates $accountEmployee  -Verbose:$false
+                        Merge-Object -Object $responseEmployee -Updates $accountEmployee  -Verbose:$false
                         $splatNewEmployee = @{
                             Uri     = "$($config.BaseUrl.Trim('/'))/employees/employee"
                             Method  = 'PATCH'
                             Headers = $headers
-                            body    = ($responseEmployee[0] | ConvertTo-Json  -Depth 10)
+                            body    = ($responseEmployee | ConvertTo-Json  -Depth 10)
                         }
-                        $responseEmployee = Invoke-RestMethod @splatNewEmployee -UseBasicParsing -Verbose:$false
+                        $responseEmployee = Invoke-FieritWebRequest @splatNewEmployee -UseBasicParsing
 
                         # Get user
                         Write-Verbose "Get user with employeeCode [$($accountUser.employeecode)]"
@@ -341,11 +386,12 @@ try {
                             Method  = 'GET'
                             Headers = $headers
                         }
-                        $responseUser = Invoke-RestMethod @splatGetUser -UseBasicParsing -Verbose:$false
+                        $responseUser = Invoke-FieritWebRequest @splatGetUser -UseBasicParsing
 
-                        $userAction = switch ($responseUser.Length) {
-                            { $_ -eq 0 } { 'Create-User' }
-                            { $_ -gt 0 } { 'Update-Correlate-User' }
+                        if ($null -eq $responseUser) {
+                            $userAction = 'Create-User'
+                        } else{
+                            $userAction = 'Update-Correlate-User'
                         }
 
                         switch ($userAction) {
@@ -357,22 +403,22 @@ try {
                                     Headers = $headers
                                     body    = ($accountUser | ConvertTo-Json  -Depth 10)
                                 }
-                                $responseUser = Invoke-RestMethod @splatNewUser -UseBasicParsing -Verbose:$false
+                                $responseUser = Invoke-FieritWebRequest @splatNewUser -UseBasicParsing
                             }
                             'Update-Correlate-User' {
                                 if ($responseUser.Length -gt 1) {
-                                    $responseUser = [array](Find-SingleActiveUserAccount -UserAccountList $responseUser)
+                                    $responseUser = (Find-SingleActiveUserAccount -UserAccountList $responseUser)
                                 }
                                 Write-Verbose "Update user [$($responseUser.code)]"
-                                $responseUser[0].name = $accountUser.name
+                                $responseUser.name = $accountUser.name
 
                                 $splatNewUser = @{
                                     Uri     = "$($config.BaseUrl.Trim('/'))/users/user"
                                     Method  = 'Patch'
                                     Headers = $headers
-                                    body    = ($responseUser[0] | ConvertTo-Json -Depth 10)
+                                    body    = ($responseUser | ConvertTo-Json -Depth 10)
                                 }
-                                $responseUser = Invoke-RestMethod @splatNewUser -UseBasicParsing -Verbose:$false
+                                $responseUser = Invoke-FieritWebRequest @splatNewUser -UseBasicParsing
                             }
                         }
                         $accountReferenceList.Add(@{
@@ -390,10 +436,11 @@ try {
                             Method  = 'GET'
                             Headers = $headers
                         }
-                        $responseUser = Invoke-RestMethod @splatGetUser -UseBasicParsing -Verbose:$false
-                        $userAction = switch ($responseUser.Length) {
-                            { $_ -eq 0 } { 'Create-User' }
-                            { $_ -gt 0 } { 'Correlate-User' }
+                        $responseUser = Invoke-FieritWebRequest @splatGetUser -UseBasicParsing
+                        if ($null -eq $responseUser) {
+                            $userAction = 'Create-User'
+                        } else{
+                            $userAction = 'Update-Correlate-User'
                         }
 
                         switch ($userAction) {
@@ -405,12 +452,12 @@ try {
                                     Headers = $headers
                                     body    = ($accountUser | ConvertTo-Json)
                                 }
-                                $responseUser = Invoke-RestMethod @splatNewUser -UseBasicParsing -Verbose:$false
+                                $responseUser =  Invoke-FieritWebRequest @splatNewUser -UseBasicParsing
                                 break
                             }
                             'Correlate-User' {
                                 if ($responseUser.Length -gt 1) {
-                                    $responseUser = [array](Find-SingleActiveUserAccount -UserAccountList $responseUser)
+                                    $responseUser = (Find-SingleActiveUserAccount -UserAccountList $responseUser)
                                 }
                             }
                         }

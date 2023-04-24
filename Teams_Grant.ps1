@@ -161,6 +161,49 @@ function Confirm-BusinessRulesInputData {
     }
 }
 
+function Invoke-FieritWebRequest {
+    [CmdletBinding()]
+    param(
+        [System.Uri]
+        $Uri,
+
+        [string]
+        $Method = 'Get',
+
+        $Headers,
+
+        [switch]
+        $UseBasicParsing,
+
+
+        $body
+    )
+    try {
+        $splatWebRequest = @{
+            Uri             = $Uri
+            Method          = $Method
+            Headers         = $Headers
+            UseBasicParsing = $UseBasicParsing
+        }
+
+        if ( -not [string]::IsNullOrEmpty( $body )) {
+            $splatWebRequest['Body'] = $body
+        }
+        $rawResult = Invoke-WebRequest @splatWebRequest -Verbose:$false -ErrorAction Stop
+        if ($null -ne $rawResult.Headers -and (-not [string]::IsNullOrEmpty($($rawResult.Headers['processIdentifier'])))) {
+            Write-Verbose "WebCall executed. Successfull [URL: $($Uri.PathAndQuery) Method: $($Method) ProcessID: $($rawResult.Headers['processIdentifier'])]"
+        }
+        if ($rawResult.Content) {
+            Write-Output ($rawResult.Content | ConvertFrom-Json )
+        }
+    } catch {
+        if ($null -ne $_.Exception.Response.Headers -and (-not [string]::IsNullOrEmpty($($_.Exception.Response.Headers['processIdentifier'])))) {
+            Write-Verbose "WebCall executed. Failed [URL: $($Uri.PathAndQuery) Method: $($Method) ProcessID: $($_.Exception.Response.Headers['processIdentifier'])]" -Verbose
+        }
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
+
 #endregion
 try {
     $token = Get-AccessToken
@@ -208,7 +251,7 @@ try {
             }
 
             Write-Verbose "Getting employee with code [$($employee.EmployeeId)]"
-            $user = Invoke-RestMethod @splatRequestUser -UseBasicParsing -Verbose:$false
+            $user = Invoke-FieritWebRequest @splatRequestUser -UseBasicParsing
 
             if ($dryRun -eq $true) {
                 Write-Warning "[DryRun] $action Fierit-ECD Team entitlement: [$($pRef.name)] to: [$($p.DisplayName)] will be executed during enforcement"
@@ -223,20 +266,20 @@ try {
                             startdate = (Get-Date -f "yyyy-MM-dd")
                         }
 
-                        if (![bool]($user[0].PSobject.Properties.name -match "team")) {
-                            $user[0] | Add-Member -NotePropertyName team -NotePropertyValue $null
+                        if (![bool]($user.PSobject.Properties.name -match "team")) {
+                            $user | Add-Member -NotePropertyName team -NotePropertyValue $null
                         }
 
-                        if ($null -eq $user[0].team -Or -not($user[0].team.id -Contains $newTeam.id )) {
-                            $user[0].team += $newTeam
+                        if ($null -eq $user.team -Or -not($user.team.id -Contains $newTeam.id )) {
+                            $user.team += $newTeam
 
                             $splatRequestUpdateUser = @{
                                 Uri     = "$($config.BaseUrl.Trim('/'))/employees/employee"
                                 Method  = 'PATCH'
                                 Headers = $headers
-                                Body    = ($user[0] | ConvertTo-Json -Depth 10)
+                                Body    = ($user | ConvertTo-Json -Depth 10)
                             }
-                            $null = Invoke-RestMethod @splatRequestUpdateUser -UseBasicParsing -Verbose:$false
+                            $null = Invoke-FieritWebRequest @splatRequestUpdateUser -UseBasicParsing
 
                             $auditLogs.Add([PSCustomObject]@{
                                     Message = "Employee: [$($employee.EmployeeId)], Grant Fierit-ECD Team entitlement: [$($pRef.name)] was successful"
@@ -260,19 +303,19 @@ try {
                         )
                     }
                     'Revoke' {
-                        if ($user[0].team.id -Contains $pRef.id) {
-                            $user[0].team = [array]($user[0].team | Where-Object { $_.id -ne $pRef.id })
-                            if ($null -eq $user[0].team) {
-                                $null = $user[0].PSObject.Properties.Remove('team')
+                        if ($user.team.id -Contains $pRef.id) {
+                            $user.team = [array]($user.team | Where-Object { $_.id -ne $pRef.id })
+                            if ($null -eq $user.team) {
+                                $null = $user.PSObject.Properties.Remove('team')
                             }
 
                             $splatRequestUpdateUser = @{
                                 Uri     = "$($config.BaseUrl.Trim('/'))/employees/employee"
                                 Method  = 'PATCH'
                                 Headers = $headers
-                                Body    = ($user[0] | ConvertTo-Json -Depth 10)
+                                Body    = ($user | ConvertTo-Json -Depth 10)
                             }
-                            $null = Invoke-RestMethod @splatRequestUpdateUser -UseBasicParsing -Verbose:$false
+                            $null = Invoke-FieritWebRequest @splatRequestUpdateUser -UseBasicParsing
 
                             $auditLogs.Add([PSCustomObject]@{
                                     Message = "Employee: [$($employee.EmployeeId)], Revoke Fierit-ECD Team entitlement: [$($pRef.name)] was successful"

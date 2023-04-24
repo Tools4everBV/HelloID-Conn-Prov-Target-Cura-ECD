@@ -221,6 +221,49 @@ function Confirm-BusinessRulesInputData {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
+
+function Invoke-FieritWebRequest {
+    [CmdletBinding()]
+    param(
+        [System.Uri]
+        $Uri,
+
+        [string]
+        $Method = 'Get',
+
+        $Headers,
+
+        [switch]
+        $UseBasicParsing,
+
+
+        $body
+    )
+    try {
+        $splatWebRequest = @{
+            Uri             = $Uri
+            Method          = $Method
+            Headers         = $Headers
+            UseBasicParsing = $UseBasicParsing
+        }
+
+        if ( -not [string]::IsNullOrEmpty( $body )) {
+            $splatWebRequest['Body'] = $body
+        }
+        $rawResult = Invoke-WebRequest @splatWebRequest -Verbose:$false -ErrorAction Stop
+        if ($null -ne $rawResult.Headers -and (-not [string]::IsNullOrEmpty($($rawResult.Headers['processIdentifier'])))) {
+            Write-Verbose "WebCall executed. Successfull [URL: $($Uri.PathAndQuery) Method: $($Method) ProcessID: $($rawResult.Headers['processIdentifier'])]"
+        }
+        if ($rawResult.Content) {
+            Write-Output ($rawResult.Content | ConvertFrom-Json )
+        }
+    } catch {
+        if ($null -ne $_.Exception.Response.Headers -and (-not [string]::IsNullOrEmpty($($_.Exception.Response.Headers['processIdentifier'])))) {
+            Write-Verbose "WebCall executed. Failed [URL: $($Uri.PathAndQuery) Method: $($Method) ProcessID: $($_.Exception.Response.Headers['processIdentifier'])]" -Verbose
+        }
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
 #endregion
 
 try {
@@ -287,8 +330,8 @@ try {
                 Method  = 'GET'
                 Headers = $headers
             }
-            $responseUser = Invoke-RestMethod @splatParams -Verbose:$false
-            if ($responseUser.Length -eq 0) {
+            $responseUser = Invoke-FieritWebRequest @splatParams -UseBasicParsing
+            if ($null -eq $responseUser){
                 throw "A user with usercode [$($employment.userId)] could not be found"
             }
 
@@ -323,9 +366,9 @@ try {
 
                         $desiredRoles = [System.Collections.Generic.List[object]]::new()
 
-                        if ($responseUser[0].Role.Length -gt 0) {
+                        if ($responseUser.Role.Length -gt 0) {
                             Write-Verbose 'Adding currently assigned role(s)'
-                            $desiredRoles.AddRange($responseUser[0].Role)
+                            $desiredRoles.AddRange($responseUser.Role)
                         }
 
                         # Can be Enabled to remove the default role when present
@@ -360,15 +403,15 @@ try {
                                 }
                             }
                             $desiredRoles.Add($newRole)
-                            $responseUser[0].role = $desiredRoles
+                            $responseUser.role = $desiredRoles
 
                             $splatPatchUserParams = @{
                                 Uri     = "$($config.BaseUrl)/users/user"
                                 Method  = 'PATCH'
                                 Headers = $headers
-                                Body    = ($responseUser[0] | ConvertTo-Json -Depth 10)
+                                Body    = ($responseUser | ConvertTo-Json -Depth 10)
                             }
-                            $responseUser = Invoke-RestMethod @splatPatchUserParams -UseBasicParsing -Verbose:$false
+                            $responseUser = Invoke-FieritWebRequest @splatPatchUserParams -UseBasicParsing
 
                             if ($config.UseMappingSelectionAuthorisationGroup) {
                                 $auditMessage = "Grant Fierit-ECD role entitlement: [$($pRef.Name)] with Selection Group [$mappedSelectionAuthorisationGroupCode] was successful"
@@ -398,21 +441,21 @@ try {
                         )
                     }
                     'revoke' {
-                        if (($responseUser[0].Role.Length -eq 0) -or (($responseUser[0].Role.id -notcontains $pRef.id))) {
+                        if (($responseUser.Role.Length -eq 0) -or (($responseUser.Role.id -notcontains $pRef.id))) {
                             $auditMessage = "[$($employment.UserId)] Revoke Fierit-ECD Role entitlement: [$($pRef.Name)]. Already removed"
                         } else {
                             Write-Verbose 'Creating list of currently assigned roles'
                             $currentRoles = [System.Collections.Generic.List[object]]::new()
-                            $currentRoles.AddRange($responseUser[0].Role)
+                            $currentRoles.AddRange($responseUser.Role)
 
                             Write-Verbose 'Removing role from the list'
                             $roleToRemove = $currentRoles | Where-Object { $_.id -eq $pRef.id }
                             [void]$currentRoles.Remove($roleToRemove)
-                            $responseUser[0].role = $currentRoles
+                            $responseUser.role = $currentRoles
 
                             Write-Verbose 'Adding default Role after revoking last Entitlements'
-                            if ($responseUser[0].role.count -eq 0) {
-                                $responseUser[0].role = @(
+                            if ($responseUser.role.count -eq 0) {
+                                $responseUser.role = @(
                                     @{
                                         id        = "$($config.DefaultTeamAssignmentGuid)"
                                         startdate = (Get-Date -f 'yyyy-MM-dd')
@@ -424,10 +467,10 @@ try {
                             $splatPatchUserParams = @{
                                 Uri     = "$($config.BaseUrl)/users/user"
                                 Method  = 'PATCH'
-                                Body    = ($responseUser[0] | ConvertTo-Json -Depth 10)
+                                Body    = ($responseUser | ConvertTo-Json -Depth 10)
                                 Headers = $headers
                             }
-                            $responseUser = Invoke-RestMethod @splatPatchUserParams -UseBasicParsing -Verbose:$false
+                            $responseUser = Invoke-FieritWebRequest @splatPatchUserParams -UseBasicParsing
                             $auditMessage = "[$($employment.UserId)] Revoke Fierit-ECD role entitlement: [$($pRef.Name)] was successful"
                         }
                         $auditLogs.Add([PSCustomObject]@{
