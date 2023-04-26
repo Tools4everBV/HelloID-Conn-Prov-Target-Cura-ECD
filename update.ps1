@@ -15,21 +15,38 @@ $accountReferenceList = [System.Collections.Generic.List[PSCustomObject]]::new()
 
 # Account mapping
 
-# Employeecode : $contractCustomProperty Will be added during the processing below.
-# When choose to update the existing contact objects are overridden.
-
 $gender = 'M'
 if ( $p.Details.Gender -eq 'Vrouw') {
     $gender = 'V'
 }
 
+# Calculated based on employment primary contract in conditions. And will be added to the accountEmployee object seperate for each employement.
+$contractMapping = @{
+    begindate    = { $_.StartDate }
+    enddate      = { $_.endDate }
+    costcentre   = { $_.CostCenter.code }
+    locationcode = { $_.Department.ExternalId }
+}
+
+$emzfunctionMapping = @{
+    code      = { $_.Title.Name }
+    begindate = { $_.StartDate }
+    enddate   = { $_.endDate }
+}
+
+# Employeecode : $contractCustomProperty Will be added during the processing below.
+# When choose to update the existing contact objects are overridden.
+# EmzFunction Will be added based on the [emzfunctionMapping]
 $accountEmployee = [PSCustomObject]@{
-    employeecode     = $null
-    gender           = $gender # M / V
-    dateofbirth      = $p.Details.BirthDate
-    begindate        = $null
-    movetimetoroster = $false
-    name             = [PSCustomObject]@{
+    employeecode        = $null
+    gender              = $gender # M / V
+    dateofbirth         = $p.Details.BirthDate
+    caregivercode       = ''
+    functiondescription = $p.PrimaryContract.Title.Name
+    salutation          = $p.Details.HonorificPrefix  #  Fixedvalue    # Dhr. | Mevr. | .?
+    movetimetoroster    = $false
+    emzfunction         = @()
+    name                = [PSCustomObject]@{
         firstname      = $p.Name.NickName
         initials       = $p.Name.Initials
         prefix         = $p.Name.FamilyNamePrefix
@@ -38,7 +55,8 @@ $accountEmployee = [PSCustomObject]@{
         partnersurname = $p.Name.FamilyNamePartner
         nameassembly   = 'Eigennaam'  # 'Partnernaam'
     }
-    contact          = @(
+    contact             = @(
+        # When choose to update the existing contact objects are overridden.
         [PSCustomObject]@{
             device = 'vast'
             type   = 'werk'
@@ -301,6 +319,36 @@ function Invoke-FieritWebRequest {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
+
+function Add-ContractProperties {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory, ValueFromPipeline)]
+        $Object,
+
+        [Parameter(Mandatory)]
+        [System.Collections.Hashtable]
+        $Mapping,
+
+        [Parameter(Mandatory)]
+        $Contract,
+
+        [Parameter()]
+        [switch]
+        $OverrideExisiting
+    )
+    try {
+        foreach ($prop in $Mapping.GetEnumerator()) {
+            Write-verbose "Added [$($prop.Name) - $(($Contract | Select-Object -Property $prop.Value).$($prop.value))]" -Verbose
+            $Object | Add-Member -NotePropertyMembers @{
+                $prop.Name = $(($Contract | Select-Object -Property $prop.Value)."$($prop.value)")
+            } -Force:$OverrideExisiting
+        }
+
+    } catch {
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
 #endregion
 
 try {
@@ -335,12 +383,21 @@ try {
     foreach ($accountNr in $allAccounts ) {
         # Get Employee
         $accountEmployeeLoop = $accountEmployee.psobject.copy()
-        $accountEmployeeLoop.employeecode = "$accountNr"
+        $accountEmployeeLoop.emzfunction = $accountEmployee.emzfunction.PSObject.Copy()
 
         $primaryContract = $null
         $primaryContract = ($desiredContractsGrouped | Where-Object { $_.name -eq $accountNr }).Group | Sort-Object @splatSortObject  | Select-Object -First 1
         if ( $primaryContract) {
-            $accountEmployeeLoop.begindate = ([datetime]($primaryContract.StartDate)).ToString('yyyy-MM-dd')
+            $accountEmployeeLoop.employeecode = "$accountNr"
+            $accountEmployeeLoop | Add-ContractProperties -Mapping $contractMapping -Contract $primaryContract
+
+            # Update the emzFunction Object
+            $emzObject = [PSCustomObject]::new()
+            $emzObject | Add-ContractProperties -Mapping $emzfunctionMapping  -Contract $primaryContract
+            $accountEmployeeLoop.emzfunction += $emzObject
+            # To remove a function [$accountEmployeeLoop.emzfunction = @()] Not sure if required to implement!
+        } else {
+            throw "No primary contract found for [$accountNr]"
         }
 
         Write-Verbose "Get Employee with employeeCode [$($accountNr)]"
@@ -515,7 +572,7 @@ try {
                 #($dryRun -eq $true) {
                 switch ($currentAccount.EmployeeFound) {
                     'Found' {
-                        # Emploee
+                        # Employee
                         $splatCompareProperties = @{
                             ReferenceObject  = @($currentAccount.accountEmployee.PSObject.Properties)
                             DifferenceObject = @($currentAccount.CurrentEmployee.PSObject.Properties)

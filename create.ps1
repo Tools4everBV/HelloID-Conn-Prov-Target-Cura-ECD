@@ -32,15 +32,33 @@ if ( $p.Details.Gender -eq 'Vrouw') {
     $gender = 'V'
 }
 
+# Calculated based on employment primary contract in conditions. And will be added to the accountEmployee object seperate for each employement.
+$contractMapping = @{
+    begindate    = { $_.StartDate }
+    enddate      = { $_.endDate }
+    costcentre   = { $_.CostCenter.code }
+    locationcode = { $_.Department.ExternalId }
+}
+
+$emzfunctionMapping = @{
+    code      = { $_.Title.Name }
+    begindate = { $_.StartDate }
+    enddate   = { $_.endDate }
+}
+
 # Account mapping
+# $employeecode Will be added during the processing below.
+# EmzFunction Will be added based on the [emzfunctionMapping]
 $accountEmployee = [PSCustomObject]@{
-    # $contractCustomProperty Will be added during the processing below.
-    employeecode     = $null
-    gender           = $gender # M / V
-    dateofbirth      = $p.Details.BirthDate
-    begindate        = $null  # Calculated based on empoyement primary contract in conditions
-    movetimetoroster = $false
-    name             = [PSCustomObject]@{
+    employeecode        = $null
+    gender              = $gender # M / V
+    dateofbirth         = $p.Details.BirthDate
+    caregivercode       = ''
+    functiondescription = $p.PrimaryContract.Title.Name
+    salutation          = $p.Details.HonorificPrefix  #  Fixedvalue    # Dhr. | Mevr. | .?
+    movetimetoroster    = $false
+    emzfunction         = @()
+    name                = [PSCustomObject]@{
         firstname      = $p.Name.NickName
         initials       = $p.Name.Initials
         prefix         = $p.Name.FamilyNamePrefix
@@ -49,7 +67,7 @@ $accountEmployee = [PSCustomObject]@{
         partnersurname = $p.Name.FamilyNamePartner
         nameassembly   = 'Eigennaam'  # 'Partnernaam'
     }
-    contact          = @(
+    contact             = @(
         # When choose to update the existing contact objects are overridden.
         [PSCustomObject]@{
             device = 'vast'
@@ -282,7 +300,35 @@ function Invoke-FieritWebRequest {
     }
 }
 
+function Add-ContractProperties {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory, ValueFromPipeline)]
+        $Object,
 
+        [Parameter(Mandatory)]
+        [System.Collections.Hashtable]
+        $Mapping,
+
+        [Parameter(Mandatory)]
+        $Contract,
+
+        [Parameter()]
+        [switch]
+        $OverrideExisiting
+    )
+    try {
+        foreach ($prop in $Mapping.GetEnumerator()) {
+            Write-verbose "Added [$($prop.Name) - $(($Contract | Select-Object -Property $prop.Value).$($prop.value))]" -Verbose
+            $Object | Add-Member -NotePropertyMembers @{
+                $prop.Name = $(($Contract | Select-Object -Property $prop.Value)."$($prop.value)")
+            } -Force:$OverrideExisiting
+        }
+
+    } catch {
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
 #endregion
 
 # Begin
@@ -306,17 +352,27 @@ try {
 
     foreach ($employment in $employmentsToCreate) {
         try {
-            # Update Account object with employment Information
-            $accountEmployee.employeecode = $employment.Name
+            # Making sure only the properties are added of the current account in the loop
+            $accountEmployeeLoop = $accountEmployee.PSObject.Copy()
+            $accountEmployeeLoop.emzfunction = $accountEmployee.emzfunction.PSObject.Copy()
+
+            # Update Employee Account object with employment Information
+            $primaryContract = $employment.Group | Sort-Object @splatSortObject | Select-Object -First 1
+            $accountEmployeeLoop.employeecode = $employment.Name
+            $accountEmployeeLoop | Add-ContractProperties -Mapping $contractMapping -Contract $primaryContract
+
+            # Update the emzFunction Object
+            $emzObject = [PSCustomObject]::new()
+            $emzObject | Add-ContractProperties -Mapping $emzfunctionMapping  -Contract $primaryContract
+            $accountEmployeeLoop.emzfunction += $emzObject
+
+            # Update User Account object
             $accountUser.employeecode = $employment.Name
             $accountUser.code = $employment.Name
 
-            $primaryContract = $employment.Group | Sort-Object @splatSortObject | Select-Object -First 1
-            $accountEmployee.begindate = $primaryContract.StartDate
-
             # Get Employee
             $splatGetEmployee = @{
-                Uri     = "$($config.BaseUrl.Trim('/'))/employees/employee?employeecode=$($accountEmployee.employeecode)"
+                Uri     = "$($config.BaseUrl.Trim('/'))/employees/employee?employeecode=$($accountEmployeeLoop.employeecode)"
                 Method  = 'GET'
                 Headers = $headers
             }
@@ -341,12 +397,12 @@ try {
                     'Create-Correlate' {
                         Write-Verbose 'Creating and correlating Fierit-ECD account'
                         # Create employee
-                        Write-Verbose "Create employee [$($accountEmployee.employeecode)]"
+                        Write-Verbose "Create employee [$($accountEmployeeLoop.employeecode)]"
                         $splatNewEmployee = @{
                             Uri     = "$($config.BaseUrl.Trim('/'))/employees/employee"
                             Method  = 'POST'
                             Headers = $headers
-                            body    = ($accountEmployee | ConvertTo-Json  -Depth 10)
+                            body    = ($accountEmployeeLoop | ConvertTo-Json  -Depth 10)
                         }
                         $responseEmployee = Invoke-FieritWebRequest @splatNewEmployee -UseBasicParsing
 
@@ -358,10 +414,10 @@ try {
                             Headers = $headers
                             body    = ($accountUser | ConvertTo-Json  -Depth 10)
                         }
-                        $responseUser =  Invoke-FieritWebRequest @splatNewUser -UseBasicParsing
+                        $responseUser = Invoke-FieritWebRequest @splatNewUser -UseBasicParsing
 
                         $accountReferenceList.Add(@{
-                                EmployeeId = $($accountEmployee.employeecode)
+                                EmployeeId = $($accountEmployeeLoop.employeecode)
                                 UserId     = $($responseUser.code)
                             })
                         break
@@ -369,8 +425,8 @@ try {
 
                     'Update-Correlate' {
                         Write-Verbose 'Updating and correlating Fierit-ECD account'
-                        Write-Verbose "Update employee [$($accountEmployee.employeecode)]"
-                        Merge-Object -Object $responseEmployee -Updates $accountEmployee  -Verbose:$false
+                        Write-Verbose "Update employee [$($accountEmployeeLoop.employeecode)]"
+                        Merge-Object -Object $responseEmployee -Updates $accountEmployeeLoop  -Verbose:$false
                         $splatNewEmployee = @{
                             Uri     = "$($config.BaseUrl.Trim('/'))/employees/employee"
                             Method  = 'PATCH'
@@ -390,7 +446,7 @@ try {
 
                         if ($null -eq $responseUser) {
                             $userAction = 'Create-User'
-                        } else{
+                        } else {
                             $userAction = 'Update-Correlate-User'
                         }
 
@@ -422,7 +478,7 @@ try {
                             }
                         }
                         $accountReferenceList.Add(@{
-                                EmployeeId = $($accountEmployee.employeecode)
+                                EmployeeId = $($accountEmployeeLoop.employeecode)
                                 UserId     = $($responseUser.code)
                             })
                         break
@@ -439,7 +495,7 @@ try {
                         $responseUser = Invoke-FieritWebRequest @splatGetUser -UseBasicParsing
                         if ($null -eq $responseUser) {
                             $userAction = 'Create-User'
-                        } else{
+                        } else {
                             $userAction = 'Update-Correlate-User'
                         }
 
@@ -452,7 +508,7 @@ try {
                                     Headers = $headers
                                     body    = ($accountUser | ConvertTo-Json)
                                 }
-                                $responseUser =  Invoke-FieritWebRequest @splatNewUser -UseBasicParsing
+                                $responseUser = Invoke-FieritWebRequest @splatNewUser -UseBasicParsing
                                 break
                             }
                             'Correlate-User' {
@@ -462,22 +518,22 @@ try {
                             }
                         }
                         $accountReferenceList.Add(@{
-                                EmployeeId = $($accountEmployee.employeecode)
+                                EmployeeId = $($accountEmployeeLoop.employeecode)
                                 UserId     = $($responseUser.code)
                             })
                     }
                 }
                 $auditLogs.Add([PSCustomObject]@{
-                        Message = "$action account was successful. Employee Reference is: [$($accountEmployee.employeecode)] account: [$($responseUser.code)]"
+                        Message = "$action account was successful. Employee Reference is: [$($accountEmployeeLoop.employeecode)] account: [$($responseUser.code)]"
                         IsError = $false
                     })
             }
         } catch {
             $ex = $PSItem
             $errorObj = Resolve-HTTPError -ErrorObject $ex
-            Write-Verbose "[$($accountEmployee.employeecode)] Could not $action Fierit-ECD account. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
+            Write-Verbose "[$($accountEmployeeLoop.employeecode)] Could not $action Fierit-ECD account. Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
             $auditLogs.Add([PSCustomObject]@{
-                    Message = "[$($accountEmployee.employeecode)] Could not $action Fierit-ECD account. Error: $($errorObj.FriendlyMessage)"
+                    Message = "[$($accountEmployeeLoop.employeecode)] Could not $action Fierit-ECD account. Error: $($errorObj.FriendlyMessage)"
                     IsError = $true
                 })
         }

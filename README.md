@@ -25,12 +25,23 @@
   - [Getting started](#getting-started)
     - [Connection settings](#connection-settings)
     - [Prerequisites](#prerequisites)
-      - [Creation process](#creation-process)
-      - [Correlation process](#correlation-process)
+    - [Creation process](#creation-process)
+    - [Correlation process](#correlation-process)
   - [Provisioning](#provisioning)
     - [Supported Features](#supported-features)
         - [Supported Action Details](#supported-action-details)
     - [Remarks](#remarks)
+      - [IP-Whitelisting](#ip-whitelisting)
+      - [Concurrent sessions](#concurrent-sessions)
+      - [Default Role Create user](#default-role-create-user)
+      - [Permission update script](#permission-update-script)
+      - [Reboarding](#reboarding)
+      - [Direct values from HR- Source System](#direct-values-from-hr--source-system)
+      - [Input Validation Check](#input-validation-check)
+      - [ProcessIdentifier](#processidentifier)
+      - [(EMZ) Function Title](#emz-function-title)
+      - [Account Object - Additional Mapping](#account-object---additional-mapping)
+      - [Location - CostCenter](#location---costcenter)
       - [Business Rules Validation Check](#business-rules-validation-check)
       - [Processing Multiple Accounts Fierit](#processing-multiple-accounts-fierit)
   - [Setup the connector](#setup-the-connector)
@@ -82,16 +93,15 @@ Example:
   getValue();
   ```
 
-#### Creation process
+### Creation process
 New functionality is the possibility to update the account in the target system during the correlation process. By default, this behavior is disabled. Meaning, the account will only be created or correlated.
 You can change this behavior in the `create.ps1` by setting the boolean `$updatePerson` to the value of `$true`.
 
-#### Correlation process
+### Correlation process
 Since Fierit-ECD has both employee and user account objects, we need to create or correlate both objects when creating a new account *(Also in the creation section of the Update.ps1 script).* The employee object is always correlated with the EmployeeCode, which is a combination of the employee number and contract number. However, the relationship in Fierit-ECD between an employee and a user account is one-to-many, but we have been advised by the vendor to use a one-to-one relationship, which we currently manage ourselves in the connector. The connector checks if an account is already associated with the employee object and correlates it, after which it is managed in HelloID.
 
-Unfortunately, there are cases where multiple accounts are linked to an employee. If this happens, the script looks for an active account. When one is found, it is correlated. If more than one or none are found, the action produces an error message that needs to be resolved manually. This will always be the case when reboarding an employee with multiple accounts, as removing the entitlement will deactivate the account.
+Unfortunately, there are cases where multiple accounts are linked to an employee. If this happens, the connector looks for an active account. When one is found, it is correlated. If more than one or none are found, the action produces an error message that needs to be resolved manually. This will always be the case when reboarding an employee with multiple accounts, as removing the entitlement will deactivate the account.
 > :bulb: **How to Solve:** In the case described above you must remove all user accounts but one for the specific Employee. Or make one account `Active` and re-run the HelloID Enforcement.
-
 
 ## Provisioning
 
@@ -124,11 +134,59 @@ Using this connector you will have the ability to create and manage the followin
 | Resource.ps1  | - |-|-
 
 ### Remarks
-- The web service is only Accessible with whitelisted IP addresses. So an Agent server is required. *Not sure if Fierit supports DNS whitelisting*
-- The web service does not support Patch requests. So the user is retrieved from Fierit, adds the new permission, and the user is updated with the current permission and new permission. Therefore, concurrent sessions must be set to 1.
- - A dummy or Default Role for creating new users. It's required to set a role when creating a new User. Because they take place in the account lifecycle the first role cannot be managed through entitlements.
- - Because the Connector Support multiplies account per Person, the permission Update script must also be used. You can place the Grant script here since this works in both situations.
- - In some cases re-boarding is not supported. Which mean that a manual action is required. See: [Correlation process](#correlation-process)
+#### IP-Whitelisting
+The web service is only Accessible with whitelisted IP addresses. So an Agent server is required. *Not sure if Fierit supports DNS whitelisting*
+
+#### Concurrent sessions
+The web service does not support Patch requests. So the user is retrieved from Fierit, adds the new permission, and the user is updated with the current permission and new permission. Therefore, concurrent sessions must be set to 1.
+
+#### Default Role Create user
+A dummy or Default Role for creating new users. It's required to set a role when creating a new User. Because the create take place in the account lifecycle the first role cannot be managed through entitlements. There you can specify a default role in the connection setting.
+
+<p>
+  <img src="assets/DefaultTeamAssignment.png"/>
+</p>
+
+#### Permission update script
+Because the Connector Support multiplies account per Person, the permission Update script must also be used. You can place the Grant script here since this works in both situations.
+
+#### Reboarding
+In some cases re-boarding is **not supported**. Which mean that a manual action is required. See: [Correlation process](#correlation-process)
+
+#### Direct values from HR- Source System
+The connector assumes that the function codes and location codes in Fierit are identical to those in the HR-source system, without requiring additional mapping. Consequently, the values from the source system must also be present in Fierit. The webservice verifies whether the specified values exist, and if not, it stops the creation or update process. To obtain the current values of the functions or locations from Fierit, two scripts have been added to the Asset folder: `Get-Fierit-Functions.ps1` and `Get-Fierit-Locations.ps1`.
+
+#### Input Validation Check
+In addition, building upon the remark [Direct values from HR- Source System](#direct-values-from-hr--source-system), No validation check is conducted on the input values coming from the HelloId contracts. If a property does not exist in Fierit, such as locations and function codes, the Fireit web service will throw explanatory an error.
+
+#### ProcessIdentifier
+To aid in troubleshooting within the Fierit, the supplier has requested that a ProcessIdentifier be included in the support request for the relevant web calls. The connector logs these ProcessIdentifiers. Failed web requests will always be logged, whereas successful requests will only be logged when the debug logging toggle is enabled.
+
+#### (EMZ) Function Title
+The EMZfunction in Fierit allows for a list of function titles with start and end dates, but the connector does not maintain the history of previous titles. Instead, it only synchronizes the current title of the primary contract for an employment, which results in the overriding of any existing function titles.
+
+#### Account Object - Additional Mapping
+Please note that the account object has been extended with an additional mapping, which is shown below. This mapping is necessary to determine values for a specific employment. It allows for the creation of multiple accounts for a single person with a specific job title or location. There is a distinction between properties that apply to all accounts/employment and those that are specific to an employment. The "normal" account object contains the general properties, while the mapping contains the specific ones. Where `$_` represent a contract to dynamically access the properties in the contracts array.
+> :bulb: Note! These mapping applies to the Create and the Update script
+
+  ```PowerShell
+$contractMapping = @{
+    begindate    = { $_.StartDate }
+    enddate      = { $_.endDate }
+    costcentre   = { $_.CostCenter.code }
+    locationcode = { $_.Department.ExternalId }
+}
+
+$emzfunctionMapping = @{
+    code      = { $_.Title.Name }
+    begindate = { $_.StartDate }
+    enddate   = { $_.endDate }
+}
+ ```
+
+#### Location - CostCenter
+The location related with the CostCenter will always be used (and ignore the location code from the request). If the CostCenter is empty or the CostCenter is not linked to location the default location will be used from stuurcode 100.
+Consequently, an employee location code cannot be cleared, and will instead be set to the default "stuurcode" when requested.
 
 #### Business Rules Validation Check
 
@@ -147,8 +205,10 @@ Due to the support for multiple accounts within Fierit, the Update task may resu
 * Make sure to set the **Concurrent Action limited to one** and runs on a local agent server.
 * Make sure the sub Permissions are enabled for all permissions configurations
 
+
 #### Script Settings
 * Besides the configuration tab, you can also configure script variables. To decide which property from a HelloID contract is used to look up a value in the mapping table, this is known as the HR Location or HR Team. And you can configure the primary contract calculation for each employment. Please note that some "same" configuration takes place in multiple scripts. Shown as below:
+- Also Check the information [Account Object - Additional Mapping](#account-object---additional-mapping)
 
 ##### Create.ps1
 
