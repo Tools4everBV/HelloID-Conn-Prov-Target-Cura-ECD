@@ -1,7 +1,7 @@
-﻿########################################################
+########################################################
 # HelloID-Conn-Prov-Target-Fierit-ECD-Entitlement-GrantRole
 #
-# Version: 1.0.0
+# Version: 1.0.1
 ########################################################
 # Initialize default values
 $config = $configuration | ConvertFrom-Json
@@ -248,7 +248,9 @@ function Invoke-FieritWebRequest {
         }
 
         if ( -not [string]::IsNullOrEmpty( $body )) {
-            $splatWebRequest['Body'] = $body
+            $utf8Encoding = [System.Text.Encoding]::UTF8
+            $encodedBody = $utf8Encoding.GetBytes($body)
+            $splatWebRequest['Body'] = $encodedBody
         }
         $rawResult = Invoke-WebRequest @splatWebRequest -Verbose:$false -ErrorAction Stop
         if ($null -ne $rawResult.Headers -and (-not [string]::IsNullOrEmpty($($rawResult.Headers['processIdentifier'])))) {
