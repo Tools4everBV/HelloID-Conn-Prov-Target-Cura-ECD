@@ -1,7 +1,7 @@
 #####################################################
 # HelloID-Conn-Prov-Target-Fierit-ECD-Create
 #
-# Version: 1.0.1
+# Version: 1.0.2
 #####################################################
 
 # Initialize default values
@@ -42,8 +42,8 @@ $contractMapping = @{
 
 $emzfunctionMapping = @{
     code      = { $_.Title.Name }
-    begindate = { $_.StartDate }
-    enddate   = { $_.endDate }
+    begindate = { [DateTime]::Parse($_.StartDate).ToString('yyyy-MM-dd') }
+    enddate   = { [DateTime]::Parse($_.endDate).ToString('yyyy-MM-dd') }
 }
 
 # Account mapping
@@ -147,6 +147,8 @@ function Set-AuthorizationHeaders {
         #$headers.Add('Accept', 'application/json; charset=utf-8')
         $headers.Add('Content-Type', 'application/json')
         $headers.Add('Authorization', "Bearer $token")
+        $headers.Add('callingParty', 'Tools4ever')
+        $headers.Add('callingApplication', 'HelloID')
 
         Write-Output $headers
     } catch {
@@ -335,7 +337,7 @@ function Add-ContractProperties {
 
 # Begin
 try {
-    # Verify if a user must be either [created and correlated], [updated and correlated] or just [correlated]
+    #Verify if a user must be either [created and correlated], [updated and correlated] or just [correlated]
     $token = Get-AccessToken
     $headers = Set-AuthorizationHeaders -Token $token
 
