@@ -1,7 +1,7 @@
 ########################################################
 # HelloID-Conn-Prov-Target-Fierit-ECD-Entitlement-GrantRole
 #
-# Version: 1.0.1
+# Version: 1.0.2
 ########################################################
 # Initialize default values
 $config = $configuration | ConvertFrom-Json
@@ -291,6 +291,8 @@ try {
     #$headers.Add('Accept', 'application/json; charset=utf-8')
     $headers.Add('Content-Type', 'application/json')
     $headers.Add('Authorization', "Bearer $accessToken")
+    $headers.Add('callingParty', 'Tools4ever')
+    $headers.Add('callingApplication', 'HelloID')
 
     # Generate Audit logging which checks for incorrect BusinessRules Configuration
     $splatCofirm = @{
