@@ -1,7 +1,7 @@
 #####################################################
 # HelloID-Conn-Prov-Target-Fierit-ECD-PermissionRoles
 #
-# Version: 1.0.1
+# Version: 1.0.2
 #####################################################
 # Initialize default values
 $config = $configuration | ConvertFrom-Json
@@ -129,6 +129,8 @@ try {
     #$headers.Add('Accept', 'application/json; charset=utf-8')
     $headers.Add('Content-Type', 'application/json')
     $headers.Add('Authorization', "Bearer $accessToken")
+    $headers.Add('callingParty', 'Tools4ever')
+    $headers.Add('callingApplication', 'HelloID')
 
     Write-Verbose 'Retrieving all roles'
     $splatParams = @{
