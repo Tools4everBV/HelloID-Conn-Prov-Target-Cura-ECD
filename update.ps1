@@ -1,7 +1,7 @@
 #####################################################
 # HelloID-Conn-Prov-Target-Fierit-ECD-Update
 #
-# Version: 1.0.1
+# Version: 1.0.2
 #####################################################
 
 # Initialize default values
@@ -30,8 +30,8 @@ $contractMapping = @{
 
 $emzfunctionMapping = @{
     code      = { $_.Title.Name }
-    begindate = { $_.StartDate }
-    enddate   = { $_.endDate }
+    begindate = { [DateTime]::Parse($_.StartDate).ToString('yyyy-MM-dd') }
+    enddate   = { [DateTime]::Parse($_.endDate).ToString('yyyy-MM-dd') }
 }
 
 # Employeecode : $contractCustomProperty Will be added during the processing below.
@@ -163,6 +163,8 @@ function Set-AuthorizationHeaders {
         #$headers.Add('Accept', 'application/json; charset=utf-8')
         $headers.Add('Content-Type', 'application/json')
         $headers.Add('Authorization', "Bearer $token")
+        $headers.Add('callingParty', 'Tools4ever')
+        $headers.Add('callingApplication', 'HelloID')
 
         Write-Output $headers
     } catch {
