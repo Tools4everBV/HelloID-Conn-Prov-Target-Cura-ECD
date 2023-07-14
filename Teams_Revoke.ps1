@@ -1,7 +1,7 @@
 #####################################################
 # HelloID-Conn-Prov-Target-Fierit-ECD-Entitlement-Revoke
 #
-# Version: 1.0.1
+# Version: 1.0.2
 #####################################################
 # Initialize default values
 $config = $configuration | ConvertFrom-Json
@@ -82,7 +82,6 @@ function Get-AccessToken {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
-
 function Set-AuthorizationHeaders {
     [CmdletBinding()]
     param (
@@ -94,10 +93,11 @@ function Set-AuthorizationHeaders {
         #$headers.Add('Accept', 'application/json; charset=utf-8')
         $headers.Add('Content-Type', 'application/json')
         $headers.Add('Authorization', "Bearer $token")
+        $headers.Add('callingParty', 'Tools4ever')
+        $headers.Add('callingApplication', 'HelloID')
 
         Write-Output $headers
-    }
-    catch {
+    } catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
