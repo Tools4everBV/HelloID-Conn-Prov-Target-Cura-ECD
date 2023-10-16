@@ -13,7 +13,7 @@
 > It is important to note that the processing order of this connector may work slightly differently from other connectors in the HelloID platform. This is because this connector supports multiple accounts per HelloID Person. *(See Remark: [Business Rules Validation Check](#business-rules-validation-check) and [Processing Multiple Accounts Fierit](#processing-multiple-accounts-fierit)*
 
 <p align="center">
-  <img src="https://tenzinger.com/wp-content/uploads/2021/06/Tenzinger_600x600.jpg"
+  <img src="https://tools4ever.nl/connector-logos/fieritecd-logo.png"
    alt="drawing" style="width:300px;"/>
 </p>
 
